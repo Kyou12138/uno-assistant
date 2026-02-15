@@ -104,7 +104,9 @@ fun OverlayControlPage() {
                 isOverlayShowing = ok
                 if (!ok) {
                     Toast.makeText(context, "未获得悬浮窗权限，无法开启", Toast.LENGTH_SHORT).show()
+                    return@Button
                 }
+                OverlayServiceController.start(context)
             }
         ) {
             Text("开启悬浮面板")
@@ -115,6 +117,7 @@ fun OverlayControlPage() {
             onClick = {
                 OverlayPanelManager.hide()
                 isOverlayShowing = false
+                OverlayServiceController.stop(context)
                 Toast.makeText(context, "已关闭悬浮面板", Toast.LENGTH_SHORT).show()
             }
         ) {

@@ -81,7 +81,11 @@ object OverlayPanelManager {
 
         val closeBtn = Button(context).apply {
             text = "关闭悬浮面板"
-            setOnClickListener { hide() }
+            setOnClickListener {
+                // 关闭入口需要同时停止前台服务，避免通知残留
+                OverlayServiceController.stop(context)
+                hide()
+            }
         }
 
         container.addView(title)
@@ -95,4 +99,3 @@ object OverlayPanelManager {
         return Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(context)
     }
 }
-
