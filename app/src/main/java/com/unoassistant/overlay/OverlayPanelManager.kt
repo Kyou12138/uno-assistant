@@ -1,4 +1,4 @@
-package com.unoassistant.overlay
+﻿package com.unoassistant.overlay
 
 import android.content.Context
 import android.graphics.PixelFormat
@@ -10,98 +10,118 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import com.unoassistant.overlay.persist.OverlayStateRepository
 import com.unoassistant.overlay.model.Opponent
 import com.unoassistant.overlay.model.OverlayState
 import com.unoassistant.overlay.model.UnoColor
+import com.unoassistant.overlay.persist.OverlayStateRepository
 import java.util.UUID
 
 /**
- * 最小悬浮面板管理器：
- * - 仅负责 show/hide 与生命周期兜底
- * - 当前阶段用于权限引导闭环与“已授权可显示悬浮面板”的验收
- *
- * 后续（前台服务/Compose UI/拖动/持久化）会在其它 issue 中逐步完善。
+ * 悬浮窗管理：
+ * - 一个“控制条”悬浮窗（添加/锁定/重置/关闭）
+ * - N 个“对手信息”独立悬浮窗（每个对手一个 WindowManager View）
  */
 object OverlayPanelManager {
     private var windowManager: WindowManager? = null
-    private var overlayView: View? = null
+    private var controlView: View? = null
+    private var controlLockButton: Button? = null
+    private val opponentViews = mutableMapOf<String, View>()
+    private val opponentLayouts = mutableMapOf<String, WindowManager.LayoutParams>()
 
-    fun isShowing(): Boolean = overlayView != null
+    fun isShowing(): Boolean = controlView != null
 
     fun show(context: Context): Boolean {
         val appContext = context.applicationContext
         if (!canDrawOverlays(appContext)) return false
-        if (overlayView != null) return true
 
-        // 启动状态仓库并读取初始配置（位置/透明度/锁定等后续逐步接入）
-        val state = OverlayStateRepository.get(appContext)
-
-        val wm = appContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        val view = buildOverlayView(appContext, state)
-        view.alpha = state.alpha
-        val lp = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = state.overlayX
-            y = state.overlayY
+        val wm = windowManager ?: (appContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager).also {
+            windowManager = it
         }
 
-        wm.addView(view, lp)
-        windowManager = wm
-        overlayView = view
+        val state = OverlayStateRepository.get(appContext)
+
+        if (controlView == null) {
+            val panel = buildControlPanelView(appContext)
+            panel.alpha = state.alpha
+            val lp = newLayoutParams(state.overlayX, state.overlayY)
+            wm.addView(panel, lp)
+            controlView = panel
+        }
+
+        syncOpponentWindows(appContext)
+        updateLockButtonText(appContext)
         return true
     }
 
     fun hide() {
         val wm = windowManager ?: return
-        val view = overlayView ?: return
-        try {
-            wm.removeView(view)
-        } finally {
-            overlayView = null
-            windowManager = null
+
+        opponentViews.values.forEach { view ->
+            runCatching { wm.removeView(view) }
         }
+        opponentViews.clear()
+        opponentLayouts.clear()
+
+        controlView?.let { runCatching { wm.removeView(it) } }
+        controlView = null
+        controlLockButton = null
     }
 
-    private fun buildOverlayView(context: Context, initialState: OverlayState): View {
+    private fun buildControlPanelView(context: Context): View {
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            // 轻量白底，用于确认“可见且可点击”
             setBackgroundColor(0xCCFFFFFF.toInt())
-            setPadding(20, 16, 20, 16)
+            setPadding(16, 12, 16, 12)
+        }
+
+        val title = TextView(context).apply {
+            text = "UNO 悬浮控制条（对手为独立窗口）"
+            textSize = 13f
+            setPadding(0, 0, 0, 8)
         }
 
         val toolbar = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
         }
 
-        val addBtn = Button(context).apply {
-            text = "添加对手"
-        }
-
+        val addBtn = Button(context).apply { text = "添加对手" }
         val lockBtn = Button(context)
+        val resetBtn = Button(context).apply { text = "重置颜色" }
+        val closeBtn = Button(context).apply { text = "关闭" }
 
-        val resetBtn = Button(context).apply {
-            text = "重置颜色"
+        addBtn.setOnClickListener {
+            OverlayStateRepository.update(context) { cur ->
+                val nextIndex = nextOpponentIndex(cur.opponents)
+                val id = UUID.randomUUID().toString()
+                val name = "对手 $nextIndex"
+                val pos = defaultOpponentPosition(cur.opponents.size)
+                cur.copy(opponents = cur.opponents + Opponent.default(id, name).copy(offsetX = pos.first, offsetY = pos.second))
+            }
+            syncOpponentWindows(context)
         }
 
-        val closeBtn = Button(context).apply {
-            text = "关闭"
-            setOnClickListener {
-                // 关闭入口需要同时停止前台服务，避免通知残留
-                OverlayServiceController.stop(context)
-                hide()
+        lockBtn.setOnClickListener {
+            OverlayStateRepository.update(context) { cur ->
+                cur.copy(locked = !cur.locked)
             }
+            updateLockButtonText(context)
+            val locked = OverlayStateRepository.get(context).locked
+            Toast.makeText(context, if (locked) "已锁定：禁止拖动对手窗" else "已解锁：可拖动对手窗", Toast.LENGTH_SHORT).show()
+        }
+
+        resetBtn.setOnClickListener {
+            OverlayStateRepository.update(context) { cur ->
+                cur.copy(opponents = cur.opponents.map { it.copy(excluded = UnoColor.entries.associateWith { false }) })
+            }
+            syncOpponentWindows(context)
+            Toast.makeText(context, "已重置所有颜色", Toast.LENGTH_SHORT).show()
+        }
+
+        closeBtn.setOnClickListener {
+            OverlayServiceController.stop(context)
+            hide()
         }
 
         toolbar.addView(addBtn)
@@ -109,85 +129,56 @@ object OverlayPanelManager {
         toolbar.addView(resetBtn)
         toolbar.addView(closeBtn)
 
-        val title = TextView(context).apply {
-            text = "UNO 悬浮标记面板（解锁后可拖动对手名）"
-            textSize = 14f
-        }
-
-        val listScroll = ScrollView(context)
-        val listContainer = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-        listScroll.addView(listContainer)
-
-        fun render(state: OverlayState) {
-            listContainer.removeAllViews()
-            if (state.opponents.isEmpty()) {
-                val empty = TextView(context).apply {
-                    text = "暂无对手，点击“添加对手”开始。"
-                    textSize = 12f
-                }
-                listContainer.addView(empty)
-                return
-            }
-            state.opponents.forEach { opponent ->
-                listContainer.addView(
-                    buildOpponentRow(context, opponent) {
-                        render(OverlayStateRepository.get(context))
-                    }
-                )
-            }
-        }
-
-        fun addOpponent() {
-            OverlayStateRepository.update(context) { cur ->
-                val nextIndex = nextOpponentIndex(cur.opponents)
-                val id = UUID.randomUUID().toString()
-                val name = "对手 $nextIndex"
-                cur.copy(opponents = cur.opponents + Opponent.default(id, name))
-            }
-            render(OverlayStateRepository.get(context))
-        }
-
-        fun resetAllColors() {
-            OverlayStateRepository.update(context) { cur ->
-                cur.copy(
-                    opponents = cur.opponents.map { it.copy(excluded = UnoColor.entries.associateWith { false }) }
-                )
-            }
-            render(OverlayStateRepository.get(context))
-            Toast.makeText(context, "已重置所有颜色为未排除态", Toast.LENGTH_SHORT).show()
-        }
-
-        addBtn.setOnClickListener { addOpponent() }
-        lockBtn.setOnClickListener {
-            OverlayStateRepository.update(context) { cur ->
-                cur.copy(locked = !cur.locked)
-            }
-            val locked = OverlayStateRepository.get(context).locked
-            lockBtn.text = if (locked) "已锁定" else "已解锁"
-            Toast.makeText(context, if (locked) "已锁定：禁止拖动" else "已解锁：可拖动", Toast.LENGTH_SHORT).show()
-        }
-        resetBtn.setOnClickListener { resetAllColors() }
-        lockBtn.text = if (initialState.locked) "已锁定" else "已解锁"
-
-        root.addView(toolbar)
         root.addView(title)
-        root.addView(listScroll)
+        root.addView(toolbar)
 
-        render(initialState)
+        controlLockButton = lockBtn
+        updateLockButtonText(context)
         return root
     }
 
-    private fun buildOpponentRow(
+    private fun syncOpponentWindows(context: Context) {
+        val wm = windowManager ?: return
+        val state = OverlayStateRepository.get(context)
+
+        val aliveIds = state.opponents.map { it.id }.toSet()
+        val removedIds = opponentViews.keys.filter { it !in aliveIds }
+        removedIds.forEach { id ->
+            opponentViews[id]?.let { runCatching { wm.removeView(it) } }
+            opponentViews.remove(id)
+            opponentLayouts.remove(id)
+        }
+
+        state.opponents.forEachIndexed { index, opponent ->
+            if (opponentViews.containsKey(opponent.id)) {
+                opponentViews[opponent.id]?.let { runCatching { wm.removeView(it) } }
+                opponentViews.remove(opponent.id)
+                opponentLayouts.remove(opponent.id)
+            }
+
+            val pos = if (opponent.offsetX == 0 && opponent.offsetY == 0) {
+                defaultOpponentPosition(index)
+            } else {
+                opponent.offsetX to opponent.offsetY
+            }
+
+            val layout = newLayoutParams(pos.first, pos.second)
+            val view = buildOpponentWindow(context, opponent.copy(offsetX = pos.first, offsetY = pos.second), layout)
+            wm.addView(view, layout)
+            opponentViews[opponent.id] = view
+            opponentLayouts[opponent.id] = layout
+        }
+    }
+
+    private fun buildOpponentWindow(
         context: Context,
         opponent: Opponent,
-        onChanged: () -> Unit
+        layout: WindowManager.LayoutParams
     ): View {
-        val row = LinearLayout(context).apply {
+        val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(10, 10, 10, 10)
-            setBackgroundColor(0x22FFFFFF)
+            setBackgroundColor(0xD9FFFFFF.toInt())
         }
 
         val header = LinearLayout(context).apply {
@@ -198,85 +189,78 @@ object OverlayPanelManager {
         val name = TextView(context).apply {
             text = "${opponent.name} ↕"
             textSize = 12f
-            setPadding(0, 0, 12, 0)
+            setPadding(0, 0, 8, 0)
         }
+
         val deleteBtn = Button(context).apply {
             text = "删"
             setOnClickListener {
                 OverlayStateRepository.update(context) { cur ->
                     cur.copy(opponents = cur.opponents.filterNot { it.id == opponent.id })
                 }
-                onChanged()
-                Toast.makeText(context, "已删除 ${opponent.name}", Toast.LENGTH_SHORT).show()
+                syncOpponentWindows(context)
             }
         }
 
         header.addView(name)
         header.addView(deleteBtn)
 
-        val colors = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-        }
+        val colors = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         val top = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
         val bottom = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
 
-        top.addView(colorButton(context, opponent, UnoColor.Red, onChanged))
-        top.addView(colorButton(context, opponent, UnoColor.Yellow, onChanged))
-        bottom.addView(colorButton(context, opponent, UnoColor.Blue, onChanged))
-        bottom.addView(colorButton(context, opponent, UnoColor.Green, onChanged))
+        top.addView(colorButton(context, opponent, UnoColor.Red))
+        top.addView(colorButton(context, opponent, UnoColor.Yellow))
+        bottom.addView(colorButton(context, opponent, UnoColor.Blue))
+        bottom.addView(colorButton(context, opponent, UnoColor.Green))
+
         colors.addView(top)
         colors.addView(bottom)
 
-        row.addView(header)
-        row.addView(colors)
-        row.translationX = opponent.offsetX.toFloat()
-        row.translationY = opponent.offsetY.toFloat()
-        attachOpponentDragHandle(context, name, row, opponent, onChanged)
-        return row
+        root.addView(header)
+        root.addView(colors)
+
+        attachOpponentWindowDrag(context, name, opponent.id, root, layout)
+        return root
     }
 
-    private fun attachOpponentDragHandle(
+    private fun attachOpponentWindowDrag(
         context: Context,
         dragHandle: View,
-        row: View,
-        opponent: Opponent,
-        onChanged: () -> Unit
+        opponentId: String,
+        targetView: View,
+        layout: WindowManager.LayoutParams
     ) {
         var startRawX = 0f
         var startRawY = 0f
-        var startTx = 0f
-        var startTy = 0f
+        var startX = 0
+        var startY = 0
 
         dragHandle.setOnTouchListener { _, event ->
             val locked = OverlayStateRepository.get(context).locked
-            if (locked) {
-                return@setOnTouchListener false
-            }
+            if (locked) return@setOnTouchListener false
 
+            val wm = windowManager ?: return@setOnTouchListener false
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     startRawX = event.rawX
                     startRawY = event.rawY
-                    startTx = row.translationX
-                    startTy = row.translationY
+                    startX = layout.x
+                    startY = layout.y
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    row.translationX = startTx + (event.rawX - startRawX)
-                    row.translationY = startTy + (event.rawY - startRawY)
+                    layout.x = startX + (event.rawX - startRawX).toInt()
+                    layout.y = startY + (event.rawY - startRawY).toInt()
+                    wm.updateViewLayout(targetView, layout)
                     true
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    val finalX = row.translationX.toInt()
-                    val finalY = row.translationY.toInt()
+                    val x = layout.x
+                    val y = layout.y
                     OverlayStateRepository.update(context) { cur ->
-                        cur.copy(
-                            opponents = cur.opponents.map { o ->
-                                if (o.id == opponent.id) o.copy(offsetX = finalX, offsetY = finalY) else o
-                            }
-                        )
+                        cur.copy(opponents = cur.opponents.map { o -> if (o.id == opponentId) o.copy(offsetX = x, offsetY = y) else o })
                     }
-                    onChanged()
                     true
                 }
                 else -> false
@@ -284,14 +268,9 @@ object OverlayPanelManager {
         }
     }
 
-    private fun colorButton(
-        context: Context,
-        opponent: Opponent,
-        color: UnoColor,
-        onChanged: () -> Unit
-    ): View {
+    private fun colorButton(context: Context, opponent: Opponent, color: UnoColor): View {
         val isExcluded = opponent.excluded[color] == true
-        val btn = Button(context).apply {
+        return Button(context).apply {
             text = when (color) {
                 UnoColor.Red -> "R"
                 UnoColor.Yellow -> "Y"
@@ -302,11 +281,11 @@ object OverlayPanelManager {
                 marginEnd = dp(context, 4)
                 bottomMargin = dp(context, 4)
             }
+
             val colorBg = when (color) {
                 UnoColor.Red -> 0xFFFF5252.toInt()
                 UnoColor.Yellow -> 0xFFFFD740.toInt()
                 UnoColor.Blue -> 0xFF448AFF.toInt()
-                // 绿色改为更深色，避免在白底上“看不见”
                 UnoColor.Green -> 0xFF1B5E20.toInt()
             }
             val colorText = when (color) {
@@ -314,30 +293,30 @@ object OverlayPanelManager {
                 else -> 0xFFFFFFFF.toInt()
             }
             val excludedBg = 0xFF757575.toInt()
+
             setBackgroundColor(if (isExcluded) excludedBg else colorBg)
             setTextColor(if (isExcluded) 0xFFFFFFFF.toInt() else colorText)
+
             setOnClickListener {
                 OverlayStateRepository.update(context) { cur ->
                     cur.copy(
                         opponents = cur.opponents.map { o ->
-                            if (o.id != opponent.id) return@map o
-                            val next = (o.excluded[color] != true)
-                            o.copy(excluded = o.excluded + (color to next))
+                            if (o.id != opponent.id) o
+                            else o.copy(excluded = o.excluded + (color to (o.excluded[color] != true)))
                         }
                     )
                 }
-                onChanged()
+                syncOpponentWindows(context)
             }
         }
-        return btn
     }
 
-    private fun dp(context: Context, value: Int): Int {
-        return (value * context.resources.displayMetrics.density).toInt()
+    private fun updateLockButtonText(context: Context) {
+        val locked = OverlayStateRepository.get(context).locked
+        controlLockButton?.text = if (locked) "已锁定" else "已解锁"
     }
 
     private fun nextOpponentIndex(opponents: List<Opponent>): Int {
-        // 默认命名：对手 1/2/...，删除后不重排已存在的名称；新增取 max+1。
         var max = 0
         opponents.forEach { o ->
             val m = Regex("^对手\\s+(\\d+)$").find(o.name)
@@ -347,8 +326,33 @@ object OverlayPanelManager {
         return max + 1
     }
 
+    private fun defaultOpponentPosition(index: Int): Pair<Int, Int> {
+        val col = index % 2
+        val row = index / 2
+        val x = 40 + col * 220
+        val y = 300 + row * 200
+        return x to y
+    }
+
+    private fun newLayoutParams(x: Int, y: Int): WindowManager.LayoutParams {
+        return WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            this.x = x
+            this.y = y
+        }
+    }
+
+    private fun dp(context: Context, value: Int): Int {
+        return (value * context.resources.displayMetrics.density).toInt()
+    }
+
     private fun canDrawOverlays(context: Context): Boolean {
-        // minSdk=26，仍保留 M 以下判断以便复用与可读性
         return Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(context)
     }
 }
