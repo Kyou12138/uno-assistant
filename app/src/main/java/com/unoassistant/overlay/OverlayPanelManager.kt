@@ -52,10 +52,10 @@ object OverlayPanelManager {
     private const val controlPaddingHorizontalPx = 10
     private const val controlPaddingVerticalPx = 8
     // 旧代码用“裸 px”会导致在高密度屏幕上过于拥挤，这里统一按 dp 计算。
-    private const val opponentPaddingPx = 10
-    private const val opponentHeaderBottomPaddingPx = 8
-    private const val opponentNameEndPaddingPx = 6
-    private const val opponentHandleEndPaddingPx = 8
+    private const val opponentPaddingPx = 8
+    private const val opponentHeaderBottomPaddingPx = 6
+    private const val opponentNameEndPaddingPx = 4
+    private const val opponentHandleEndPaddingPx = 4
 
     // 触控热区尽量满足 44dp 规则
     private const val controlBtnWidthDp = 44
@@ -63,16 +63,16 @@ object OverlayPanelManager {
     private const val controlBtnMarginEndDp = 6
 
     // “牌”样式：窄而高，单行 4 张横向排列
-    private const val colorBtnWidthDp = 38
-    private const val colorBtnHeightDp = 52
+    private const val colorBtnWidthDp = 34
+    private const val colorBtnHeightDp = 44
     private const val colorBtnMarginEndDp = 2
     private const val colorBtnMarginBottomDp = 0
 
     private const val defaultControlWidthDp = 210
     private const val defaultControlHeightDp = 56
     private const val opponentOffsetFromControlDp = 12
-    private const val opponentEstimatedWidthDp = 230
-    private const val opponentEstimatedHeightDp = 125
+    private const val opponentEstimatedWidthDp = 190
+    private const val opponentEstimatedHeightDp = 106
     private const val clockwiseSlotCount = 8
     private const val minTopInsetDp = 24
     private const val panelCornerRadiusDp = 16
@@ -119,6 +119,7 @@ object OverlayPanelManager {
         updateLockButtonText(appContext)
         updateControlAddRemoveEnabled(appContext)
         applyControlCollapsedState(appContext)
+        applyConfiguredVisuals(appContext)
         return true
     }
 
@@ -140,6 +141,16 @@ object OverlayPanelManager {
         controlRemoveButton = null
         controlExpanded = null
         controlCollapsedView = null
+    }
+
+    /**
+     * 将当前持久化配置应用到已显示窗口（透明度等）。
+     * 用于设置页即时生效场景。
+     */
+    fun applyConfiguredVisuals(context: Context) {
+        val state = OverlayStateRepository.get(context.applicationContext)
+        controlView?.alpha = state.alpha
+        opponentViews.values.forEach { it.alpha = state.opponentAlpha }
     }
 
     private fun buildControlPanelView(context: Context, state: OverlayState): View {
@@ -462,6 +473,7 @@ object OverlayPanelManager {
             val existingLayout = opponentLayouts[opponent.id]
             if (existingView != null && existingLayout != null) {
                 // 避免重建窗口导致闪烁：仅原地更新颜色按钮样式（必要时同步位置）
+                existingView.alpha = state.opponentAlpha
                 updateOpponentColors(opponent)
                 if (!(opponent.offsetX == 0 && opponent.offsetY == 0)) {
                     if (existingLayout.x != opponent.offsetX || existingLayout.y != opponent.offsetY) {
@@ -489,6 +501,7 @@ object OverlayPanelManager {
 
             val layout = newLayoutParams(pos.first, pos.second)
             val view = buildOpponentWindow(context, opponent.copy(offsetX = pos.first, offsetY = pos.second), layout)
+            view.alpha = state.opponentAlpha
             val added = safeAddView(wm, view, layout)
             if (added) {
                 opponentViews[opponent.id] = view
@@ -735,6 +748,30 @@ object OverlayPanelManager {
         control: View?,
         state: OverlayState
     ): Pair<Int, Int> {
+        val screenW = context.resources.displayMetrics.widthPixels
+        val screenH = context.resources.displayMetrics.heightPixels
+        val minY = dp(context, minTopInsetDp)
+        val opponentW = dp(context, opponentEstimatedWidthDp)
+        val opponentH = dp(context, opponentEstimatedHeightDp)
+        val edgeGap = dp(context, 12)
+
+        // 默认 3 人场景优先给出稳定直观的落位：左中 / 中上 / 右中
+        if (index == 0) {
+            val x = edgeGap.coerceIn(0, maxOf(0, screenW - opponentW))
+            val y = ((screenH - opponentH) / 2).coerceIn(minY, maxOf(minY, screenH - opponentH))
+            return x to y
+        }
+        if (index == 1) {
+            val x = ((screenW - opponentW) / 2).coerceIn(0, maxOf(0, screenW - opponentW))
+            val y = (minY + dp(context, 24)).coerceIn(minY, maxOf(minY, screenH - opponentH))
+            return x to y
+        }
+        if (index == 2) {
+            val x = (screenW - opponentW - edgeGap).coerceIn(0, maxOf(0, screenW - opponentW))
+            val y = ((screenH - opponentH) / 2).coerceIn(minY, maxOf(minY, screenH - opponentH))
+            return x to y
+        }
+
         // 按控制条四周“顺时针环绕”给新增对手分配默认落点（8 方位一圈，超出后外扩下一圈）。
         // 落点只在首次创建对手窗时生效，已持久化坐标不会被覆盖。
         val baseX = state.overlayX
@@ -744,14 +781,14 @@ object OverlayPanelManager {
         val controlH = control?.measuredHeight?.takeIf { it > 0 } ?: dp(context, defaultControlHeightDp)
 
         val gap = dp(context, opponentOffsetFromControlDp)
-        val opponentW = dp(context, opponentEstimatedWidthDp)
-        val opponentH = dp(context, opponentEstimatedHeightDp)
+        val opponentW2 = dp(context, opponentEstimatedWidthDp)
+        val opponentH2 = dp(context, opponentEstimatedHeightDp)
 
         val ring = index / clockwiseSlotCount + 1
         val slot = index % clockwiseSlotCount
 
-        val stepX = controlW + gap + (ring - 1) * (opponentW + gap)
-        val stepY = controlH + gap + (ring - 1) * (opponentH + gap)
+        val stepX = controlW + gap + (ring - 1) * (opponentW2 + gap)
+        val stepY = controlH + gap + (ring - 1) * (opponentH2 + gap)
 
         val raw = when (slot) {
             0 -> (baseX + stepX) to baseY          // 右
@@ -764,11 +801,8 @@ object OverlayPanelManager {
             else -> (baseX + stepX) to (baseY - stepY) // 右上
         }
 
-        val screenW = context.resources.displayMetrics.widthPixels
-        val screenH = context.resources.displayMetrics.heightPixels
-        val minY = dp(context, minTopInsetDp)
-        val clampedX = raw.first.coerceIn(0, maxOf(0, screenW - opponentW))
-        val clampedY = raw.second.coerceIn(minY, maxOf(minY, screenH - opponentH))
+        val clampedX = raw.first.coerceIn(0, maxOf(0, screenW - opponentW2))
+        val clampedY = raw.second.coerceIn(minY, maxOf(minY, screenH - opponentH2))
         return clampedX to clampedY
     }
 

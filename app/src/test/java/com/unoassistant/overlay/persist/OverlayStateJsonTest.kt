@@ -15,6 +15,8 @@ class OverlayStateJsonTest {
         assertEquals(3, state.maxOpponents)
         assertTrue(state.locked)
         assertEquals(1.0f, state.alpha, 0.0001f)
+        assertEquals(0.92f, state.opponentAlpha, 0.0001f)
+        assertTrue(state.controlCollapsed)
         assertTrue(state.opponents.isEmpty())
     }
 
@@ -24,6 +26,7 @@ class OverlayStateJsonTest {
             overlayX = 120,
             overlayY = 360,
             alpha = 0.72f,
+            opponentAlpha = 0.65f,
             locked = false,
             controlCollapsed = true,
             maxOpponents = 7,
@@ -49,6 +52,7 @@ class OverlayStateJsonTest {
         assertEquals(120, decoded.overlayX)
         assertEquals(360, decoded.overlayY)
         assertEquals(0.72f, decoded.alpha, 0.0001f)
+        assertEquals(0.65f, decoded.opponentAlpha, 0.0001f)
         assertEquals(false, decoded.locked)
         assertEquals(true, decoded.controlCollapsed)
         assertEquals(7, decoded.maxOpponents)
@@ -65,9 +69,10 @@ class OverlayStateJsonTest {
 
     @Test
     fun decodeOrDefault_clampsAlphaAndMaxOpponents() {
-        val raw = "x=1;y=2;alpha=9.9;locked=1;collapsed=0;max=999;opponents=[]"
+        val raw = "x=1;y=2;alpha=9.9;oalpha=9.9;locked=1;collapsed=0;max=999;opponents=[]"
         val state = OverlayStateJson.decodeOrDefault(raw)
         assertEquals(1.0f, state.alpha, 0.0001f)
+        assertEquals(1.0f, state.opponentAlpha, 0.0001f)
         assertEquals(12, state.maxOpponents)
     }
 }

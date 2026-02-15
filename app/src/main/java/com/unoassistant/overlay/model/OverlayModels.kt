@@ -34,6 +34,8 @@ data class OverlayState(
     val overlayX: Int,
     val overlayY: Int,
     val alpha: Float,
+    // 对手窗透明度（单独配置）
+    val opponentAlpha: Float,
     val locked: Boolean,
     // 控制条是否收起到侧边（半隐藏）
     val controlCollapsed: Boolean,
@@ -47,8 +49,10 @@ data class OverlayState(
                 overlayX = 0,
                 overlayY = 200,
                 alpha = 1.0f,
+                opponentAlpha = 0.92f,
                 locked = true,
-                controlCollapsed = false,
+                // 初次体验：默认收起控制条，减少遮挡
+                controlCollapsed = true,
                 maxOpponents = 3,
                 opponents = emptyList()
             )

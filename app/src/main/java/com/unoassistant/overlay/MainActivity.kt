@@ -79,16 +79,22 @@ fun OverlayControlPage() {
     val lifecycleOwner = LocalLifecycleOwner.current
     var hasOverlayPermission by remember { mutableStateOf(canDrawOverlays(context)) }
     var isOverlayShowing by remember { mutableStateOf(OverlayPanelManager.isShowing()) }
-    var maxOpponents by remember { mutableStateOf(OverlayStateRepository.get(context).maxOpponents) }
+    val initialState = OverlayStateRepository.get(context)
+    var maxOpponents by remember { mutableStateOf(initialState.maxOpponents) }
+    var opponentAlphaPercent by remember { mutableStateOf((initialState.opponentAlpha * 100).toInt()) }
     val canDecreaseMax = maxOpponents > 1
     val canIncreaseMax = maxOpponents < 12
+    val canDecreaseOpponentAlpha = opponentAlphaPercent > 40
+    val canIncreaseOpponentAlpha = opponentAlphaPercent < 100
 
     DisposableEffect(lifecycleOwner, context) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 hasOverlayPermission = canDrawOverlays(context)
                 isOverlayShowing = OverlayPanelManager.isShowing()
-                maxOpponents = OverlayStateRepository.get(context).maxOpponents
+                val state = OverlayStateRepository.get(context)
+                maxOpponents = state.maxOpponents
+                opponentAlphaPercent = (state.opponentAlpha * 100).toInt()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -142,6 +148,9 @@ fun OverlayControlPage() {
                 maxOpponents = maxOpponents,
                 canIncreaseMax = canIncreaseMax,
                 canDecreaseMax = canDecreaseMax,
+                opponentAlphaPercent = opponentAlphaPercent,
+                canIncreaseOpponentAlpha = canIncreaseOpponentAlpha,
+                canDecreaseOpponentAlpha = canDecreaseOpponentAlpha,
                 onIncreaseMax = {
                     val next = (maxOpponents + 1).coerceAtMost(12)
                     OverlayStateRepository.update(context) { cur -> cur.copy(maxOpponents = next) }
@@ -151,6 +160,18 @@ fun OverlayControlPage() {
                     val next = (maxOpponents - 1).coerceAtLeast(1)
                     OverlayStateRepository.update(context) { cur -> cur.copy(maxOpponents = next) }
                     maxOpponents = next
+                },
+                onIncreaseOpponentAlpha = {
+                    val next = (opponentAlphaPercent + 5).coerceAtMost(100)
+                    OverlayStateRepository.update(context) { cur -> cur.copy(opponentAlpha = next / 100f) }
+                    opponentAlphaPercent = next
+                    OverlayPanelManager.applyConfiguredVisuals(context)
+                },
+                onDecreaseOpponentAlpha = {
+                    val next = (opponentAlphaPercent - 5).coerceAtLeast(40)
+                    OverlayStateRepository.update(context) { cur -> cur.copy(opponentAlpha = next / 100f) }
+                    opponentAlphaPercent = next
+                    OverlayPanelManager.applyConfiguredVisuals(context)
                 }
             )
 
@@ -258,7 +279,12 @@ private fun ActionCard(
     canIncreaseMax: Boolean,
     canDecreaseMax: Boolean,
     onIncreaseMax: () -> Unit,
-    onDecreaseMax: () -> Unit
+    onDecreaseMax: () -> Unit,
+    opponentAlphaPercent: Int,
+    canIncreaseOpponentAlpha: Boolean,
+    canDecreaseOpponentAlpha: Boolean,
+    onIncreaseOpponentAlpha: () -> Unit,
+    onDecreaseOpponentAlpha: () -> Unit
 ) {
     Card(
         shape = RoundedCornerShape(20.dp),
@@ -307,6 +333,48 @@ private fun ActionCard(
                     IconButton(
                         enabled = canIncreaseMax,
                         onClick = onIncreaseMax,
+                        modifier = Modifier
+                            .size(44.dp)
+                            .background(Color(0xFFEFF4FF), RoundedCornerShape(12.dp))
+                    ) {
+                        Text("+", style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+                    }
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("对手透明度", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        text = "范围 40% ~ 100%（当前 $opponentAlphaPercent%）",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF64748B)
+                    )
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    IconButton(
+                        enabled = canDecreaseOpponentAlpha,
+                        onClick = onDecreaseOpponentAlpha,
+                        modifier = Modifier
+                            .size(44.dp)
+                            .background(Color(0xFFEFF4FF), RoundedCornerShape(12.dp))
+                    ) {
+                        Text("-", style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+                    }
+                    Text(
+                        "$opponentAlphaPercent%",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(horizontal = 4.dp)
+                    )
+                    IconButton(
+                        enabled = canIncreaseOpponentAlpha,
+                        onClick = onIncreaseOpponentAlpha,
                         modifier = Modifier
                             .size(44.dp)
                             .background(Color(0xFFEFF4FF), RoundedCornerShape(12.dp))
