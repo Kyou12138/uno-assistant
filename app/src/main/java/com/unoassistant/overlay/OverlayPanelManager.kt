@@ -447,8 +447,12 @@ object OverlayPanelManager {
                             OverlayStateRepository.update(context) { cur -> cur.copy(overlayX = final.first, overlayY = final.second) }
                         }
                     }
-                    // allowWhenCollapsed=true 场景：如果未发生拖动，返回 false 让 click 生效（展开）
-                    if (allowWhenCollapsed && !dragging) false else true
+                    // allowWhenCollapsed=true 场景：轻点应稳定触发 click（展开），拖动仍消费事件。
+                    // 不依赖“点击速度”，避免慢速轻点导致无法展开。
+                    if (allowWhenCollapsed && !dragging && event.actionMasked == MotionEvent.ACTION_UP) {
+                        dragHandle.performClick()
+                    }
+                    true
                 }
                 else -> false
             }
