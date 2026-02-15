@@ -185,8 +185,14 @@ object OverlayPanelManager {
         onChanged: () -> Unit
     ): View {
         val row = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(10, 10, 10, 10)
+            setBackgroundColor(0x22FFFFFF)
+        }
+
+        val header = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, 10, 0, 10)
+            setPadding(0, 0, 0, 8)
         }
 
         val name = TextView(context).apply {
@@ -194,7 +200,6 @@ object OverlayPanelManager {
             textSize = 12f
             setPadding(0, 0, 12, 0)
         }
-
         val deleteBtn = Button(context).apply {
             text = "删"
             setOnClickListener {
@@ -206,18 +211,24 @@ object OverlayPanelManager {
             }
         }
 
+        header.addView(name)
+        header.addView(deleteBtn)
+
         val colors = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
+            orientation = LinearLayout.VERTICAL
         }
+        val top = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+        val bottom = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
 
-        colors.addView(colorButton(context, opponent, UnoColor.Red, onChanged))
-        colors.addView(colorButton(context, opponent, UnoColor.Yellow, onChanged))
-        colors.addView(colorButton(context, opponent, UnoColor.Blue, onChanged))
-        colors.addView(colorButton(context, opponent, UnoColor.Green, onChanged))
+        top.addView(colorButton(context, opponent, UnoColor.Red, onChanged))
+        top.addView(colorButton(context, opponent, UnoColor.Yellow, onChanged))
+        bottom.addView(colorButton(context, opponent, UnoColor.Blue, onChanged))
+        bottom.addView(colorButton(context, opponent, UnoColor.Green, onChanged))
+        colors.addView(top)
+        colors.addView(bottom)
 
-        row.addView(name)
+        row.addView(header)
         row.addView(colors)
-        row.addView(deleteBtn)
         row.translationX = opponent.offsetX.toFloat()
         row.translationY = opponent.offsetY.toFloat()
         attachOpponentDragHandle(context, name, row, opponent, onChanged)
@@ -287,6 +298,10 @@ object OverlayPanelManager {
                 UnoColor.Blue -> "B"
                 UnoColor.Green -> "G"
             }
+            layoutParams = LinearLayout.LayoutParams(dp(context, 64), dp(context, 40)).apply {
+                marginEnd = dp(context, 4)
+                bottomMargin = dp(context, 4)
+            }
             val colorBg = when (color) {
                 UnoColor.Red -> 0xFFFF5252.toInt()
                 UnoColor.Yellow -> 0xFFFFD740.toInt()
@@ -315,6 +330,10 @@ object OverlayPanelManager {
             }
         }
         return btn
+    }
+
+    private fun dp(context: Context, value: Int): Int {
+        return (value * context.resources.displayMetrics.density).toInt()
     }
 
     private fun nextOpponentIndex(opponents: List<Opponent>): Int {
