@@ -29,6 +29,7 @@ object OverlayPanelManager {
     private var controlLockButton: Button? = null
     private val opponentViews = mutableMapOf<String, View>()
     private val opponentLayouts = mutableMapOf<String, WindowManager.LayoutParams>()
+    private val opponentColorButtons = mutableMapOf<String, MutableMap<UnoColor, Button>>()
 
     private val panelBgColor = 0xD9FFFFFF.toInt()
     private val excludedColorBg = 0xFF757575.toInt()
@@ -97,6 +98,7 @@ object OverlayPanelManager {
         }
         opponentViews.clear()
         opponentLayouts.clear()
+        opponentColorButtons.clear()
 
         controlView?.let { runCatching { wm.removeView(it) } }
         controlView = null
@@ -179,17 +181,27 @@ object OverlayPanelManager {
             opponentViews[id]?.let { runCatching { wm.removeView(it) } }
             opponentViews.remove(id)
             opponentLayouts.remove(id)
+            opponentColorButtons.remove(id)
         }
 
         state.opponents.forEachIndexed { index, opponent ->
-            if (opponentViews.containsKey(opponent.id)) {
-                opponentViews[opponent.id]?.let { runCatching { wm.removeView(it) } }
-                opponentViews.remove(opponent.id)
-                opponentLayouts.remove(opponent.id)
+            val existingView = opponentViews[opponent.id]
+            val existingLayout = opponentLayouts[opponent.id]
+            if (existingView != null && existingLayout != null) {
+                // 避免重建窗口导致闪烁：仅原地更新颜色按钮样式（必要时同步位置）
+                updateOpponentColors(opponent)
+                if (!(opponent.offsetX == 0 && opponent.offsetY == 0)) {
+                    if (existingLayout.x != opponent.offsetX || existingLayout.y != opponent.offsetY) {
+                        existingLayout.x = opponent.offsetX
+                        existingLayout.y = opponent.offsetY
+                        runCatching { wm.updateViewLayout(existingView, existingLayout) }
+                    }
+                }
+                return@forEachIndexed
             }
 
             val pos = if (opponent.offsetX == 0 && opponent.offsetY == 0) {
-                // 默认摆放避让控制条区域，避免遮挡操作按钮
+                // 仅在首次创建时计算默认摆放，避免后续同步导致窗口“跳动”
                 defaultOpponentPosition(context, index, controlView, state)
             } else {
                 opponent.offsetX to opponent.offsetY
@@ -245,16 +257,26 @@ object OverlayPanelManager {
         val top = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
         val bottom = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
 
-        top.addView(colorButton(context, opponent, UnoColor.Red))
-        top.addView(colorButton(context, opponent, UnoColor.Yellow))
-        bottom.addView(colorButton(context, opponent, UnoColor.Blue))
-        bottom.addView(colorButton(context, opponent, UnoColor.Green))
+        val colorButtons = mutableMapOf<UnoColor, Button>()
+        fun addColor(parent: LinearLayout, color: UnoColor) {
+            val btn = colorButton(context, opponent, color)
+            colorButtons[color] = btn
+            parent.addView(btn)
+        }
+
+        addColor(top, UnoColor.Red)
+        addColor(top, UnoColor.Yellow)
+        addColor(bottom, UnoColor.Blue)
+        addColor(bottom, UnoColor.Green)
 
         colors.addView(top)
         colors.addView(bottom)
 
         root.addView(header)
         root.addView(colors)
+
+        // 保存按钮引用，便于后续“原地更新样式”而不是重建窗口
+        opponentColorButtons[opponent.id] = colorButtons
 
         attachOpponentWindowDrag(context, name, opponent.id, root, layout)
         return root
@@ -304,7 +326,7 @@ object OverlayPanelManager {
         }
     }
 
-    private fun colorButton(context: Context, opponent: Opponent, color: UnoColor): View {
+    private fun colorButton(context: Context, opponent: Opponent, color: UnoColor): Button {
         val isExcluded = opponent.excluded[color] == true
         return Button(context).apply {
             text = colorLabel(color)
@@ -405,6 +427,18 @@ object OverlayPanelManager {
         return when (color) {
             UnoColor.Yellow -> 0xFF1A1A1A.toInt()
             else -> 0xFFFFFFFF.toInt()
+        }
+    }
+
+    private fun updateOpponentColors(opponent: Opponent) {
+        val btns = opponentColorButtons[opponent.id] ?: return
+        UnoColor.entries.forEach { c ->
+            val btn = btns[c] ?: return@forEach
+            val isExcluded = opponent.excluded[c] == true
+            val activeBg = activeColor(c)
+            val activeText = activeTextColor(c)
+            btn.setBackgroundColor(if (isExcluded) excludedColorBg else activeBg)
+            btn.setTextColor(if (isExcluded) 0xFFFFFFFF.toInt() else activeText)
         }
     }
 
