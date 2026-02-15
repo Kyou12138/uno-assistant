@@ -749,7 +749,8 @@ object OverlayPanelManager {
             cornerRadius = dp(context, 12).toFloat()
             if (isExcluded) {
                 setColor(excludedColorBg)
-                setStroke(dp(context, 2), activeColor(color))
+                // 排除态采用中性边框，避免“灰底+彩边”产生视觉噪点
+                setStroke(dp(context, 1), 0x33000000)
             } else {
                 setColor(activeColor(color))
                 setStroke(dp(context, 1), 0x22000000)
