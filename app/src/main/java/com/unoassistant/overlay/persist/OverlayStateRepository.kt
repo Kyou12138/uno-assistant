@@ -8,7 +8,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 
 /**
  * 进程内的“状态仓库”：
@@ -20,6 +19,9 @@ import kotlinx.coroutines.runBlocking
 object OverlayStateRepository {
     @Volatile
     private var started = false
+
+    @Volatile
+    private var hydrated = false
 
     @Volatile
     var latestState: OverlayState = OverlayState.default()
@@ -35,13 +37,11 @@ object OverlayStateRepository {
             val appContext = context.applicationContext
             store = OverlayStateStore(appContext)
             scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-            // 首次启动先同步读取一次，避免 UI 初次拿到“全默认”而覆盖真实存储。
-            latestState = runBlocking(Dispatchers.IO) {
-                store!!.stateFlow.first()
-            }
+            // 异步水合：避免主线程阻塞导致偶发 ANR。
             scope!!.launch {
                 store!!.stateFlow.collectLatest { state ->
                     latestState = state
+                    hydrated = true
                 }
             }
             started = true
@@ -55,10 +55,27 @@ object OverlayStateRepository {
 
     fun update(context: Context, transform: (OverlayState) -> OverlayState) {
         ensureStarted(context)
-        val next = transform(latestState)
-        latestState = next
-        scope?.launch {
-            store?.save(next)
+        val localStore = store ?: return
+        val localScope = scope ?: return
+
+        if (hydrated) {
+            val next = transform(latestState)
+            latestState = next
+            localScope.launch {
+                localStore.save(next)
+            }
+            return
+        }
+
+        // 尚未水合时先做乐观更新，避免交互“无响应感”；随后以持久化快照为基准再计算一次并落盘。
+        val optimistic = transform(latestState)
+        latestState = optimistic
+        localScope.launch {
+            val persisted = runCatching { localStore.stateFlow.first() }.getOrElse { latestState }
+            val next = transform(persisted)
+            latestState = next
+            hydrated = true
+            localStore.save(next)
         }
     }
 }
