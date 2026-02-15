@@ -100,13 +100,9 @@ fun OverlayControlPage() {
                     Toast.makeText(context, "请先授予悬浮窗权限", Toast.LENGTH_SHORT).show()
                     return@Button
                 }
-                val ok = OverlayPanelManager.show(context)
-                isOverlayShowing = ok
-                if (!ok) {
-                    Toast.makeText(context, "未获得悬浮窗权限，无法开启", Toast.LENGTH_SHORT).show()
-                    return@Button
-                }
                 OverlayServiceController.start(context)
+                // 真实状态以服务内 addView 结果为准，这里仅做乐观更新并在返回/恢复时刷新。
+                isOverlayShowing = true
             }
         ) {
             Text("开启悬浮面板")
@@ -115,9 +111,8 @@ fun OverlayControlPage() {
         Button(
             modifier = Modifier.fillMaxWidth(),
             onClick = {
-                OverlayPanelManager.hide()
-                isOverlayShowing = false
                 OverlayServiceController.stop(context)
+                isOverlayShowing = false
                 Toast.makeText(context, "已关闭悬浮面板", Toast.LENGTH_SHORT).show()
             }
         ) {

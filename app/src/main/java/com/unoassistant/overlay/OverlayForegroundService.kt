@@ -28,11 +28,22 @@ class OverlayForegroundService : Service() {
                 stopSelf()
                 return START_NOT_STICKY
             }
-            else -> {
-                startInForeground()
-                return START_STICKY
-            }
+            ACTION_START, null -> return handleStart()
+            else -> return handleStart()
         }
+    }
+
+    private fun handleStart(): Int {
+        startInForeground()
+        // 在服务内添加 overlay，确保脱离 Activity 生命周期。
+        val ok = OverlayPanelManager.show(this)
+        if (!ok) {
+            // 未授权时不应启动成功：清理通知并停止服务，避免残留“已启用”假象。
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        return START_STICKY
     }
 
     private fun startInForeground() {
@@ -86,4 +97,3 @@ class OverlayForegroundService : Service() {
         private const val NOTIFICATION_ID = 1001
     }
 }
-
