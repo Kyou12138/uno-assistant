@@ -173,7 +173,7 @@ object OverlayPanelManager {
         val lockBtn = controlIconButton(context, android.R.drawable.ic_lock_lock, "锁定拖动")
         val resetBtn = controlIconButton(context, android.R.drawable.ic_menu_rotate, "重置颜色")
         val collapseBtn = controlIconButton(context, android.R.drawable.ic_media_previous, "收起到侧边")
-        val closeBtn = controlIconButton(context, android.R.drawable.ic_menu_close_clear_cancel, "关闭悬浮")
+        val closeBtn = controlIconButton(context, android.R.drawable.ic_menu_close_clear_cancel, "长按关闭悬浮")
 
         addBtn.setOnClickListener {
             val curState = OverlayStateRepository.get(context)
@@ -225,8 +225,13 @@ object OverlayPanelManager {
         }
 
         closeBtn.setOnClickListener {
+            Toast.makeText(context, "长按关闭悬浮", Toast.LENGTH_SHORT).show()
+        }
+
+        closeBtn.setOnLongClickListener {
             OverlayServiceController.stop(context)
             hide()
+            true
         }
 
         collapseBtn.setOnClickListener {
