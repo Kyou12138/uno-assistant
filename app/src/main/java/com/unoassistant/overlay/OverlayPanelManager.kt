@@ -55,10 +55,13 @@ object OverlayPanelManager {
     private const val colorBtnMarginEndDp = 4
     private const val colorBtnMarginBottomDp = 4
 
+    private const val defaultControlWidthDp = 250
     private const val defaultControlHeightDp = 56
     private const val opponentOffsetFromControlDp = 12
-    private const val opponentGridColGapDp = 220
-    private const val opponentGridRowGapDp = 190
+    private const val opponentEstimatedWidthDp = 152
+    private const val opponentEstimatedHeightDp = 140
+    private const val clockwiseSlotCount = 8
+    private const val minTopInsetDp = 24
 
     fun isShowing(): Boolean = controlView != null
 
@@ -379,16 +382,41 @@ object OverlayPanelManager {
         control: View?,
         state: OverlayState
     ): Pair<Int, Int> {
-        // 控制条默认位于 (overlayX, overlayY)。对手窗默认从控制条下方开始排布，避免遮挡控制按钮。
+        // 按控制条四周“顺时针环绕”给新增对手分配默认落点（8 方位一圈，超出后外扩下一圈）。
+        // 落点只在首次创建对手窗时生效，已持久化坐标不会被覆盖。
         val baseX = state.overlayX
-        val controlH = control?.measuredHeight?.takeIf { it > 0 } ?: dp(context, defaultControlHeightDp)
-        val baseY = state.overlayY + controlH + dp(context, opponentOffsetFromControlDp)
+        val baseY = state.overlayY
 
-        val col = index % 2
-        val row = index / 2
-        val x = baseX + col * dp(context, opponentGridColGapDp)
-        val y = baseY + row * dp(context, opponentGridRowGapDp)
-        return x to y
+        val controlW = control?.measuredWidth?.takeIf { it > 0 } ?: dp(context, defaultControlWidthDp)
+        val controlH = control?.measuredHeight?.takeIf { it > 0 } ?: dp(context, defaultControlHeightDp)
+
+        val gap = dp(context, opponentOffsetFromControlDp)
+        val opponentW = dp(context, opponentEstimatedWidthDp)
+        val opponentH = dp(context, opponentEstimatedHeightDp)
+
+        val ring = index / clockwiseSlotCount + 1
+        val slot = index % clockwiseSlotCount
+
+        val stepX = controlW + gap + (ring - 1) * (opponentW + gap)
+        val stepY = controlH + gap + (ring - 1) * (opponentH + gap)
+
+        val raw = when (slot) {
+            0 -> (baseX + stepX) to baseY          // 右
+            1 -> (baseX + stepX) to (baseY + stepY) // 右下
+            2 -> baseX to (baseY + stepY)           // 下
+            3 -> (baseX - stepX) to (baseY + stepY) // 左下
+            4 -> (baseX - stepX) to baseY           // 左
+            5 -> (baseX - stepX) to (baseY - stepY) // 左上
+            6 -> baseX to (baseY - stepY)           // 上
+            else -> (baseX + stepX) to (baseY - stepY) // 右上
+        }
+
+        val screenW = context.resources.displayMetrics.widthPixels
+        val screenH = context.resources.displayMetrics.heightPixels
+        val minY = dp(context, minTopInsetDp)
+        val clampedX = raw.first.coerceIn(0, maxOf(0, screenW - opponentW))
+        val clampedY = raw.second.coerceIn(minY, maxOf(minY, screenH - opponentH))
+        return clampedX to clampedY
     }
 
     private fun buttonLayoutParams(
