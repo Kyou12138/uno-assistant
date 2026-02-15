@@ -15,7 +15,7 @@ object OverlayStateJson {
     fun encode(state: OverlayState): String {
         // 采用非常保守的键值拼接格式，避免复杂 JSON 依赖。
         // 格式：
-        // x=0;y=200;alpha=1.0;oalpha=0.92;locked=1;collapsed=1;max=3;opponents=[id|name|R0Y0B0G0|ox|oy,...]
+        // x=0;y=200;alpha=1.0;oalpha=0.75;locked=1;collapsed=1;max=3;opponents=[id|name|R0Y0B0G0|ox|oy,...]
         val opponents = state.opponents.joinToString(separator = ",") { o ->
             val flags = buildString {
                 append("R"); append(if (o.excluded[UnoColor.Red] == true) 1 else 0)
@@ -47,7 +47,7 @@ object OverlayStateJson {
         val x = map["x"]?.toIntOrNull() ?: 0
         val y = map["y"]?.toIntOrNull() ?: 200
         val alpha = map["alpha"]?.toFloatOrNull() ?: 1.0f
-        val opponentAlpha = map["oalpha"]?.toFloatOrNull() ?: 0.92f
+        val opponentAlpha = map["oalpha"]?.toFloatOrNull() ?: 0.75f
         val locked = (map["locked"]?.trim() == "1")
         val controlCollapsed = map["collapsed"]?.trim()?.let { it == "1" } ?: true
         val maxOpponents = map["max"]?.toIntOrNull()?.coerceIn(1, 12) ?: 3

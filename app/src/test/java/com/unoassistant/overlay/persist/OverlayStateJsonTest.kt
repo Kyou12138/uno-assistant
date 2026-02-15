@@ -15,7 +15,7 @@ class OverlayStateJsonTest {
         assertEquals(3, state.maxOpponents)
         assertTrue(state.locked)
         assertEquals(1.0f, state.alpha, 0.0001f)
-        assertEquals(0.92f, state.opponentAlpha, 0.0001f)
+        assertEquals(0.75f, state.opponentAlpha, 0.0001f)
         assertTrue(state.controlCollapsed)
         assertTrue(state.opponents.isEmpty())
     }

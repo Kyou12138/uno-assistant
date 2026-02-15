@@ -49,7 +49,7 @@ data class OverlayState(
                 overlayX = 0,
                 overlayY = 200,
                 alpha = 1.0f,
-                opponentAlpha = 0.92f,
+                opponentAlpha = 0.75f,
                 locked = true,
                 // 初次体验：默认收起控制条，减少遮挡
                 controlCollapsed = true,
