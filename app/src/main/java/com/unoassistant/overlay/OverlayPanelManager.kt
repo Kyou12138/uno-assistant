@@ -5,6 +5,7 @@ import android.graphics.PixelFormat
 import android.os.Build
 import android.provider.Settings
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
@@ -56,6 +57,7 @@ object OverlayPanelManager {
         }
 
         wm.addView(view, lp)
+        attachDragHandler(appContext, view, wm, lp)
         windowManager = wm
         overlayView = view
         return true
@@ -88,6 +90,8 @@ object OverlayPanelManager {
             text = "添加对手"
         }
 
+        val lockBtn = Button(context)
+
         val resetBtn = Button(context).apply {
             text = "重置颜色"
         }
@@ -102,12 +106,15 @@ object OverlayPanelManager {
         }
 
         toolbar.addView(addBtn)
+        toolbar.addView(lockBtn)
         toolbar.addView(resetBtn)
         toolbar.addView(closeBtn)
 
         val title = TextView(context).apply {
             text = "UNO 悬浮标记面板"
             textSize = 14f
+            // 拖动手势仅挂在标题区域，降低误触概率。
+            tag = "drag_handle"
         }
 
         val listScroll = ScrollView(context)
@@ -156,7 +163,16 @@ object OverlayPanelManager {
         }
 
         addBtn.setOnClickListener { addOpponent() }
+        lockBtn.setOnClickListener {
+            OverlayStateRepository.update(context) { cur ->
+                cur.copy(locked = !cur.locked)
+            }
+            val locked = OverlayStateRepository.get(context).locked
+            lockBtn.text = if (locked) "已锁定" else "已解锁"
+            Toast.makeText(context, if (locked) "已锁定：禁止拖动" else "已解锁：可拖动", Toast.LENGTH_SHORT).show()
+        }
         resetBtn.setOnClickListener { resetAllColors() }
+        lockBtn.text = if (initialState.locked) "已锁定" else "已解锁"
 
         root.addView(toolbar)
         root.addView(title)
@@ -164,6 +180,49 @@ object OverlayPanelManager {
 
         render(initialState)
         return root
+    }
+
+    private fun attachDragHandler(
+        context: Context,
+        root: View,
+        wm: WindowManager,
+        lp: WindowManager.LayoutParams
+    ) {
+        val dragHandle = root.findViewWithTag<View>("drag_handle") ?: return
+        var lastRawX = 0f
+        var lastRawY = 0f
+
+        dragHandle.setOnTouchListener { _, event ->
+            val locked = OverlayStateRepository.get(context).locked
+            if (locked) {
+                return@setOnTouchListener false
+            }
+
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    lastRawX = event.rawX
+                    lastRawY = event.rawY
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = (event.rawX - lastRawX).toInt()
+                    val dy = (event.rawY - lastRawY).toInt()
+                    lp.x += dx
+                    lp.y += dy
+                    wm.updateViewLayout(root, lp)
+                    lastRawX = event.rawX
+                    lastRawY = event.rawY
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    OverlayStateRepository.update(context) { cur ->
+                        cur.copy(overlayX = lp.x, overlayY = lp.y)
+                    }
+                    true
+                }
+                else -> false
+            }
+        }
     }
 
     private fun buildOpponentRow(
