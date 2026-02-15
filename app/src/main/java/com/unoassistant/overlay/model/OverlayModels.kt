@@ -35,6 +35,8 @@ data class OverlayState(
     val overlayY: Int,
     val alpha: Float,
     val locked: Boolean,
+    // 控制条是否收起到侧边（半隐藏）
+    val controlCollapsed: Boolean,
     // 可新增对手的最大数量（配置项，默认 4）
     val maxOpponents: Int,
     val opponents: List<Opponent>
@@ -46,6 +48,7 @@ data class OverlayState(
                 overlayY = 200,
                 alpha = 1.0f,
                 locked = true,
+                controlCollapsed = false,
                 maxOpponents = 4,
                 opponents = emptyList()
             )

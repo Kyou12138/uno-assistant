@@ -30,7 +30,10 @@ import java.util.UUID
 object OverlayPanelManager {
     private var windowManager: WindowManager? = null
     private var controlView: View? = null
+    private var controlLayout: WindowManager.LayoutParams? = null
     private var controlLockButton: ImageButton? = null
+    private var controlExpanded: View? = null
+    private var controlCollapsedView: View? = null
     private val opponentViews = mutableMapOf<String, View>()
     private val opponentLayouts = mutableMapOf<String, WindowManager.LayoutParams>()
     private val opponentColorButtons = mutableMapOf<String, MutableMap<UnoColor, Button>>()
@@ -68,6 +71,9 @@ object OverlayPanelManager {
     private const val minTopInsetDp = 24
     private const val panelCornerRadiusDp = 14
     private const val panelBorderWidthDp = 1
+    private const val collapsedHandleWidthDp = 46
+    private const val collapsedHandleHeightDp = 46
+    private const val collapsedPeekDp = 18
 
     fun isShowing(): Boolean = controlView != null
 
@@ -82,20 +88,24 @@ object OverlayPanelManager {
         val state = OverlayStateRepository.get(appContext)
 
         if (controlView == null) {
-            val panel = buildControlPanelView(appContext)
+            val panel = buildControlPanelView(appContext, state)
             panel.alpha = state.alpha
-            val lp = newLayoutParams(state.overlayX, state.overlayY)
-            wm.addView(panel, lp)
-            // 确保 measuredHeight 可用，便于对手窗口默认摆放避让控制条
+            // 先测量一次，便于根据“收起/展开”计算初始 x/y
             panel.measure(
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
             )
+
+            val pos = initialControlPosition(appContext, state)
+            val lp = newLayoutParams(pos.first, pos.second)
+            wm.addView(panel, lp)
             controlView = panel
+            controlLayout = lp
         }
 
         syncOpponentWindows(appContext)
         updateLockButtonText(appContext)
+        applyControlCollapsedState(appContext)
         return true
     }
 
@@ -111,10 +121,13 @@ object OverlayPanelManager {
 
         controlView?.let { runCatching { wm.removeView(it) } }
         controlView = null
+        controlLayout = null
         controlLockButton = null
+        controlExpanded = null
+        controlCollapsedView = null
     }
 
-    private fun buildControlPanelView(context: Context): View {
+    private fun buildControlPanelView(context: Context, state: OverlayState): View {
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             background = panelBackground(context)
@@ -126,9 +139,21 @@ object OverlayPanelManager {
             )
         }
 
+        val expanded = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+        val collapsed = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+
+        // 拖动手柄：只在展开态显示，避免与按钮点击冲突
+        val dragHandle = TextView(context).apply {
+            text = "拖"
+            tooltipText = "拖动控制条"
+            setPadding(6, 10, 10, 10)
+            setTextColor(0xFF334155.toInt())
+        }
+
         val addBtn = controlIconButton(context, android.R.drawable.ic_input_add, "添加对手")
         val lockBtn = controlIconButton(context, android.R.drawable.ic_lock_lock, "锁定拖动")
         val resetBtn = controlIconButton(context, android.R.drawable.ic_menu_rotate, "重置颜色")
+        val collapseBtn = controlIconButton(context, android.R.drawable.ic_media_previous, "收起到侧边")
         val closeBtn = controlIconButton(context, android.R.drawable.ic_menu_close_clear_cancel, "关闭悬浮")
 
         addBtn.setOnClickListener {
@@ -169,20 +194,137 @@ object OverlayPanelManager {
             hide()
         }
 
+        collapseBtn.setOnClickListener {
+            val lp = controlLayout ?: return@setOnClickListener
+            val screenW = context.resources.displayMetrics.widthPixels
+            val sideRight = lp.x > screenW / 2
+            OverlayStateRepository.update(context) { cur ->
+                cur.copy(controlCollapsed = true).let { it } // 仅切换状态，位置保持 overlayX/overlayY
+            }
+            // 收起后把控制条吸到侧边（不改变持久化 overlayX/overlayY，展开时可恢复）
+            applyControlCollapsedState(context, forceSideRight = sideRight)
+        }
+
         // 控制条尽量紧凑，减少遮挡游戏区域
+        dragHandle.layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(context, controlBtnHeightDp)).apply {
+            marginEnd = dp(context, 6)
+        }
         addBtn.layoutParams = buttonLayoutParams(context, controlBtnWidthDp, controlBtnHeightDp, controlBtnMarginEndDp)
         lockBtn.layoutParams = buttonLayoutParams(context, controlBtnWidthDp, controlBtnHeightDp, controlBtnMarginEndDp)
         resetBtn.layoutParams = buttonLayoutParams(context, controlBtnWidthDp, controlBtnHeightDp, controlBtnMarginEndDp)
+        collapseBtn.layoutParams = buttonLayoutParams(context, controlBtnWidthDp, controlBtnHeightDp, controlBtnMarginEndDp)
         closeBtn.layoutParams = buttonLayoutParams(context, controlBtnWidthDp, controlBtnHeightDp)
 
-        root.addView(addBtn)
-        root.addView(lockBtn)
-        root.addView(resetBtn)
-        root.addView(closeBtn)
+        expanded.addView(dragHandle)
+        expanded.addView(addBtn)
+        expanded.addView(lockBtn)
+        expanded.addView(resetBtn)
+        expanded.addView(collapseBtn)
+        expanded.addView(closeBtn)
+
+        val expandBtn = controlIconButton(context, android.R.drawable.ic_media_next, "展开控制条")
+        expandBtn.layoutParams = buttonLayoutParams(context, collapsedHandleWidthDp, collapsedHandleHeightDp)
+        expandBtn.setOnClickListener {
+            OverlayStateRepository.update(context) { cur -> cur.copy(controlCollapsed = false) }
+            applyControlCollapsedState(context)
+        }
+        collapsed.addView(expandBtn)
+
+        // 初始状态
+        expanded.visibility = if (state.controlCollapsed) View.GONE else View.VISIBLE
+        collapsed.visibility = if (state.controlCollapsed) View.VISIBLE else View.GONE
+
+        root.addView(expanded)
+        root.addView(collapsed)
+
+        controlExpanded = expanded
+        controlCollapsedView = collapsed
 
         controlLockButton = lockBtn
         updateLockButtonText(context)
+
+        attachControlDrag(context, dragHandle, root)
         return root
+    }
+
+    private fun initialControlPosition(context: Context, state: OverlayState): Pair<Int, Int> {
+        if (!state.controlCollapsed) return state.overlayX to state.overlayY
+        val screenW = context.resources.displayMetrics.widthPixels
+        val y = state.overlayY
+        val peek = dp(context, collapsedPeekDp)
+        val x = screenW - peek
+        return x to y
+    }
+
+    private fun applyControlCollapsedState(context: Context, forceSideRight: Boolean? = null) {
+        val panel = controlView ?: return
+        val lp = controlLayout ?: return
+        val wm = windowManager ?: return
+        val state = OverlayStateRepository.get(context)
+
+        val expanded = controlExpanded
+        val collapsed = controlCollapsedView
+        if (expanded != null && collapsed != null) {
+            expanded.visibility = if (state.controlCollapsed) View.GONE else View.VISIBLE
+            collapsed.visibility = if (state.controlCollapsed) View.VISIBLE else View.GONE
+        }
+
+        // 重新测量（收起/展开宽度不同）
+        panel.measure(
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        )
+
+        if (state.controlCollapsed) {
+            val screenW = context.resources.displayMetrics.widthPixels
+            val w = panel.measuredWidth.takeIf { it > 0 } ?: dp(context, collapsedHandleWidthDp)
+            val peek = dp(context, collapsedPeekDp)
+            val sideRight = forceSideRight ?: (lp.x > screenW / 2)
+            lp.x = if (sideRight) (screenW - peek) else -(w - peek)
+            // y 保持当前，便于用户拖到合适高度
+        } else {
+            lp.x = state.overlayX
+            lp.y = state.overlayY
+        }
+        runCatching { wm.updateViewLayout(panel, lp) }
+    }
+
+    private fun attachControlDrag(context: Context, dragHandle: View, targetView: View) {
+        var startRawX = 0f
+        var startRawY = 0f
+        var startX = 0
+        var startY = 0
+
+        dragHandle.setOnTouchListener { _, event ->
+            val wm = windowManager ?: return@setOnTouchListener false
+            val lp = controlLayout ?: return@setOnTouchListener false
+            val state = OverlayStateRepository.get(context)
+            // 收起态不允许通过展开态拖动手柄移动
+            if (state.controlCollapsed) return@setOnTouchListener false
+
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    startRawX = event.rawX
+                    startRawY = event.rawY
+                    startX = lp.x
+                    startY = lp.y
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    lp.x = startX + (event.rawX - startRawX).toInt()
+                    lp.y = startY + (event.rawY - startRawY).toInt()
+                    runCatching { wm.updateViewLayout(targetView, lp) }
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    val x = lp.x
+                    val y = lp.y
+                    OverlayStateRepository.update(context) { cur -> cur.copy(overlayX = x, overlayY = y) }
+                    true
+                }
+                else -> false
+            }
+        }
     }
 
     private fun syncOpponentWindows(context: Context) {

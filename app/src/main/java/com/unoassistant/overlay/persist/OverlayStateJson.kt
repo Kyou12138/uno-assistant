@@ -15,7 +15,7 @@ object OverlayStateJson {
     fun encode(state: OverlayState): String {
         // 采用非常保守的键值拼接格式，避免复杂 JSON 依赖。
         // 格式：
-        // x=0;y=200;alpha=1.0;locked=1;max=4;opponents=[id|name|R0Y0B0G0|ox|oy,...]
+        // x=0;y=200;alpha=1.0;locked=1;collapsed=0;max=4;opponents=[id|name|R0Y0B0G0|ox|oy,...]
         val opponents = state.opponents.joinToString(separator = ",") { o ->
             val flags = buildString {
                 append("R"); append(if (o.excluded[UnoColor.Red] == true) 1 else 0)
@@ -25,7 +25,7 @@ object OverlayStateJson {
             }
             "${escape(o.id)}|${escape(o.name)}|$flags|${o.offsetX}|${o.offsetY}"
         }
-        return "x=${state.overlayX};y=${state.overlayY};alpha=${state.alpha};locked=${if (state.locked) 1 else 0};max=${state.maxOpponents};opponents=[$opponents]"
+        return "x=${state.overlayX};y=${state.overlayY};alpha=${state.alpha};locked=${if (state.locked) 1 else 0};collapsed=${if (state.controlCollapsed) 1 else 0};max=${state.maxOpponents};opponents=[$opponents]"
     }
 
     fun decodeOrDefault(raw: String?): OverlayState {
@@ -48,6 +48,7 @@ object OverlayStateJson {
         val y = map["y"]?.toIntOrNull() ?: 200
         val alpha = map["alpha"]?.toFloatOrNull() ?: 1.0f
         val locked = (map["locked"]?.trim() == "1")
+        val controlCollapsed = (map["collapsed"]?.trim() == "1")
         val maxOpponents = map["max"]?.toIntOrNull()?.coerceIn(1, 12) ?: 4
 
         val opponentsRaw = map["opponents"] ?: "[]"
@@ -58,6 +59,7 @@ object OverlayStateJson {
             overlayY = y,
             alpha = alpha.coerceIn(0.2f, 1.0f),
             locked = locked,
+            controlCollapsed = controlCollapsed,
             maxOpponents = maxOpponents,
             opponents = opponents
         )
