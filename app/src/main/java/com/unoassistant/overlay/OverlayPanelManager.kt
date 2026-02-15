@@ -47,6 +47,11 @@ object OverlayPanelManager {
             panel.alpha = state.alpha
             val lp = newLayoutParams(state.overlayX, state.overlayY)
             wm.addView(panel, lp)
+            // 确保 measuredHeight 可用，便于对手窗口默认摆放避让控制条
+            panel.measure(
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+            )
             controlView = panel
         }
 
@@ -71,32 +76,22 @@ object OverlayPanelManager {
 
     private fun buildControlPanelView(context: Context): View {
         val root = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(0xCCFFFFFF.toInt())
-            setPadding(16, 12, 16, 12)
-        }
-
-        val title = TextView(context).apply {
-            text = "UNO 悬浮控制条（对手为独立窗口）"
-            textSize = 13f
-            setPadding(0, 0, 0, 8)
-        }
-
-        val toolbar = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
+            setBackgroundColor(0xD9FFFFFF.toInt())
+            setPadding(10, 8, 10, 8)
         }
 
-        val addBtn = Button(context).apply { text = "添加对手" }
+        val addBtn = Button(context).apply { text = "+" }
         val lockBtn = Button(context)
-        val resetBtn = Button(context).apply { text = "重置颜色" }
-        val closeBtn = Button(context).apply { text = "关闭" }
+        val resetBtn = Button(context).apply { text = "重置" }
+        val closeBtn = Button(context).apply { text = "关" }
 
         addBtn.setOnClickListener {
             OverlayStateRepository.update(context) { cur ->
                 val nextIndex = nextOpponentIndex(cur.opponents)
                 val id = UUID.randomUUID().toString()
                 val name = "对手 $nextIndex"
-                val pos = defaultOpponentPosition(cur.opponents.size)
+                val pos = defaultOpponentPosition(context, cur.opponents.size, controlView, cur)
                 cur.copy(opponents = cur.opponents + Opponent.default(id, name).copy(offsetX = pos.first, offsetY = pos.second))
             }
             syncOpponentWindows(context)
@@ -124,13 +119,16 @@ object OverlayPanelManager {
             hide()
         }
 
-        toolbar.addView(addBtn)
-        toolbar.addView(lockBtn)
-        toolbar.addView(resetBtn)
-        toolbar.addView(closeBtn)
+        // 控制条尽量紧凑，减少遮挡游戏区域
+        addBtn.layoutParams = LinearLayout.LayoutParams(dp(context, 48), dp(context, 40)).apply { marginEnd = dp(context, 6) }
+        lockBtn.layoutParams = LinearLayout.LayoutParams(dp(context, 64), dp(context, 40)).apply { marginEnd = dp(context, 6) }
+        resetBtn.layoutParams = LinearLayout.LayoutParams(dp(context, 64), dp(context, 40)).apply { marginEnd = dp(context, 6) }
+        closeBtn.layoutParams = LinearLayout.LayoutParams(dp(context, 48), dp(context, 40))
 
-        root.addView(title)
-        root.addView(toolbar)
+        root.addView(addBtn)
+        root.addView(lockBtn)
+        root.addView(resetBtn)
+        root.addView(closeBtn)
 
         controlLockButton = lockBtn
         updateLockButtonText(context)
@@ -157,7 +155,8 @@ object OverlayPanelManager {
             }
 
             val pos = if (opponent.offsetX == 0 && opponent.offsetY == 0) {
-                defaultOpponentPosition(index)
+                // 默认摆放避让控制条区域，避免遮挡操作按钮
+                defaultOpponentPosition(context, index, controlView, state)
             } else {
                 opponent.offsetX to opponent.offsetY
             }
@@ -193,7 +192,10 @@ object OverlayPanelManager {
         }
 
         val deleteBtn = Button(context).apply {
-            text = "删"
+            // 按钮尽量小，避免遮挡对手信息与色块区域
+            text = "X"
+            textSize = 11f
+            layoutParams = LinearLayout.LayoutParams(dp(context, 56), dp(context, 32))
             setOnClickListener {
                 OverlayStateRepository.update(context) { cur ->
                     cur.copy(opponents = cur.opponents.filterNot { it.id == opponent.id })
@@ -286,7 +288,8 @@ object OverlayPanelManager {
                 UnoColor.Red -> 0xFFFF5252.toInt()
                 UnoColor.Yellow -> 0xFFFFD740.toInt()
                 UnoColor.Blue -> 0xFF448AFF.toInt()
-                UnoColor.Green -> 0xFF1B5E20.toInt()
+                // 用更亮的绿色，避免在部分机型/亮度下“绿色看不清”
+                UnoColor.Green -> 0xFF00C853.toInt()
             }
             val colorText = when (color) {
                 UnoColor.Yellow -> 0xFF1A1A1A.toInt()
@@ -326,11 +329,21 @@ object OverlayPanelManager {
         return max + 1
     }
 
-    private fun defaultOpponentPosition(index: Int): Pair<Int, Int> {
+    private fun defaultOpponentPosition(
+        context: Context,
+        index: Int,
+        control: View?,
+        state: OverlayState
+    ): Pair<Int, Int> {
+        // 控制条默认位于 (overlayX, overlayY)。对手窗默认从控制条下方开始排布，避免遮挡控制按钮。
+        val baseX = state.overlayX
+        val controlH = control?.measuredHeight?.takeIf { it > 0 } ?: dp(context, 56)
+        val baseY = state.overlayY + controlH + dp(context, 12)
+
         val col = index % 2
         val row = index / 2
-        val x = 40 + col * 220
-        val y = 300 + row * 200
+        val x = baseX + col * dp(context, 220)
+        val y = baseY + row * dp(context, 190)
         return x to y
     }
 
