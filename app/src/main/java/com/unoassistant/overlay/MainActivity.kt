@@ -51,11 +51,13 @@ fun OverlayControlPage() {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var hasOverlayPermission by remember { mutableStateOf(canDrawOverlays(context)) }
+    var isOverlayShowing by remember { mutableStateOf(OverlayPanelManager.isShowing()) }
 
     DisposableEffect(lifecycleOwner, context) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 hasOverlayPermission = canDrawOverlays(context)
+                isOverlayShowing = OverlayPanelManager.isShowing()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -73,6 +75,16 @@ fun OverlayControlPage() {
             style = MaterialTheme.typography.titleMedium
         )
 
+        Text(
+            text = "面板状态：${if (isOverlayShowing) "已开启" else "未开启"}",
+            style = MaterialTheme.typography.bodyMedium
+        )
+
+        Text(
+            text = "说明：本应用仅提供“悬浮覆盖”形态的手动记录，不做联网或自动识别。",
+            style = MaterialTheme.typography.bodySmall
+        )
+
         Button(
             modifier = Modifier.fillMaxWidth(),
             onClick = { openOverlayPermissionSettings(context) }
@@ -82,9 +94,17 @@ fun OverlayControlPage() {
 
         Button(
             modifier = Modifier.fillMaxWidth(),
-            enabled = hasOverlayPermission,
             onClick = {
-                Toast.makeText(context, "开启悬浮面板入口已预留，后续任务接入服务", Toast.LENGTH_SHORT).show()
+                if (!hasOverlayPermission) {
+                    openOverlayPermissionSettings(context)
+                    Toast.makeText(context, "请先授予悬浮窗权限", Toast.LENGTH_SHORT).show()
+                    return@Button
+                }
+                val ok = OverlayPanelManager.show(context)
+                isOverlayShowing = ok
+                if (!ok) {
+                    Toast.makeText(context, "未获得悬浮窗权限，无法开启", Toast.LENGTH_SHORT).show()
+                }
             }
         ) {
             Text("开启悬浮面板")
@@ -93,7 +113,9 @@ fun OverlayControlPage() {
         Button(
             modifier = Modifier.fillMaxWidth(),
             onClick = {
-                Toast.makeText(context, "关闭悬浮面板入口已预留，后续任务接入服务", Toast.LENGTH_SHORT).show()
+                OverlayPanelManager.hide()
+                isOverlayShowing = false
+                Toast.makeText(context, "已关闭悬浮面板", Toast.LENGTH_SHORT).show()
             }
         ) {
             Text("关闭悬浮面板")
@@ -120,4 +142,3 @@ private fun openOverlayPermissionSettings(context: Context) {
 private fun OverlayControlPagePreview() {
     OverlayControlPage()
 }
-
