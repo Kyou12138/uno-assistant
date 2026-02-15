@@ -80,6 +80,7 @@ object OverlayPanelManager {
     private const val collapsedPeekDp = 18
     private const val panelElevationDp = 10
     private const val dragSlopDp = 8
+    private const val edgeSnapDistanceDp = 24
 
     fun isShowing(): Boolean = controlView != null
 
@@ -409,9 +410,29 @@ object OverlayPanelManager {
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     if (dragging) {
-                        val x = lp.x
-                        val y = lp.y
-                        OverlayStateRepository.update(context) { cur -> cur.copy(overlayX = x, overlayY = y) }
+                        val stateNow = OverlayStateRepository.get(context)
+                        if (stateNow.controlCollapsed && allowWhenCollapsed) {
+                            val y = clampYInScreen(context, lp.y, targetView.measuredHeight)
+                            lp.y = y
+                            runCatching { wm.updateViewLayout(targetView, lp) }
+                            // 收起态拖动主要用于调整高度，不覆盖展开态的 overlayX
+                            OverlayStateRepository.update(context) { cur -> cur.copy(overlayY = y) }
+                            applyControlCollapsedState(context, forceSideRight = (lp.x > context.resources.displayMetrics.widthPixels / 2))
+                        } else {
+                            val final = finalizeDropPosition(
+                                context = context,
+                                currentX = lp.x,
+                                currentY = lp.y,
+                                viewWidth = targetView.measuredWidth,
+                                viewHeight = targetView.measuredHeight,
+                                fallbackWidthDp = defaultControlWidthDp,
+                                fallbackHeightDp = defaultControlHeightDp
+                            )
+                            lp.x = final.first
+                            lp.y = final.second
+                            runCatching { wm.updateViewLayout(targetView, lp) }
+                            OverlayStateRepository.update(context) { cur -> cur.copy(overlayX = final.first, overlayY = final.second) }
+                        }
                     }
                     // allowWhenCollapsed=true 场景：如果未发生拖动，返回 false 让 click 生效（展开）
                     if (allowWhenCollapsed && !dragging) false else true
@@ -576,10 +597,22 @@ object OverlayPanelManager {
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     if (dragging) {
-                        val x = layout.x
-                        val y = layout.y
+                        val final = finalizeDropPosition(
+                            context = context,
+                            currentX = layout.x,
+                            currentY = layout.y,
+                            viewWidth = targetView.measuredWidth,
+                            viewHeight = targetView.measuredHeight,
+                            fallbackWidthDp = opponentEstimatedWidthDp,
+                            fallbackHeightDp = opponentEstimatedHeightDp
+                        )
+                        layout.x = final.first
+                        layout.y = final.second
+                        wm.updateViewLayout(targetView, layout)
                         OverlayStateRepository.update(context) { cur ->
-                            cur.copy(opponents = cur.opponents.map { o -> if (o.id == opponentId) o.copy(offsetX = x, offsetY = y) else o })
+                            cur.copy(opponents = cur.opponents.map { o ->
+                                if (o.id == opponentId) o.copy(offsetX = final.first, offsetY = final.second) else o
+                            })
                         }
                         true
                     } else {
@@ -772,6 +805,40 @@ object OverlayPanelManager {
             setColor(panelBgColor)
             setStroke(dp(context, panelBorderWidthDp), panelBorderColor)
         }
+    }
+
+    private fun clampYInScreen(context: Context, y: Int, measuredHeight: Int): Int {
+        val screenH = context.resources.displayMetrics.heightPixels
+        val h = measuredHeight.takeIf { it > 0 } ?: dp(context, defaultControlHeightDp)
+        val minY = dp(context, minTopInsetDp)
+        return y.coerceIn(minY, maxOf(minY, screenH - h))
+    }
+
+    private fun finalizeDropPosition(
+        context: Context,
+        currentX: Int,
+        currentY: Int,
+        viewWidth: Int,
+        viewHeight: Int,
+        fallbackWidthDp: Int,
+        fallbackHeightDp: Int
+    ): Pair<Int, Int> {
+        val screenW = context.resources.displayMetrics.widthPixels
+        val screenH = context.resources.displayMetrics.heightPixels
+        val minY = dp(context, minTopInsetDp)
+        val w = viewWidth.takeIf { it > 0 } ?: dp(context, fallbackWidthDp)
+        val h = viewHeight.takeIf { it > 0 } ?: dp(context, fallbackHeightDp)
+
+        var x = currentX.coerceIn(0, maxOf(0, screenW - w))
+        val y = currentY.coerceIn(minY, maxOf(minY, screenH - h))
+
+        val snap = dp(context, edgeSnapDistanceDp)
+        if (x <= snap) {
+            x = 0
+        } else if ((screenW - (x + w)) <= snap) {
+            x = maxOf(0, screenW - w)
+        }
+        return x to y
     }
 
     private fun updateOpponentColors(opponent: Opponent) {
