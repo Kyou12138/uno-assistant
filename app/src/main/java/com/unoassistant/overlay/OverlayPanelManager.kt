@@ -88,6 +88,10 @@ object OverlayPanelManager {
             text = "添加对手"
         }
 
+        val resetBtn = Button(context).apply {
+            text = "重置颜色"
+        }
+
         val closeBtn = Button(context).apply {
             text = "关闭"
             setOnClickListener {
@@ -98,6 +102,7 @@ object OverlayPanelManager {
         }
 
         toolbar.addView(addBtn)
+        toolbar.addView(resetBtn)
         toolbar.addView(closeBtn)
 
         val title = TextView(context).apply {
@@ -140,7 +145,18 @@ object OverlayPanelManager {
             render(OverlayStateRepository.get(context))
         }
 
+        fun resetAllColors() {
+            OverlayStateRepository.update(context) { cur ->
+                cur.copy(
+                    opponents = cur.opponents.map { it.copy(excluded = UnoColor.entries.associateWith { false }) }
+                )
+            }
+            render(OverlayStateRepository.get(context))
+            Toast.makeText(context, "已重置所有颜色为未排除态", Toast.LENGTH_SHORT).show()
+        }
+
         addBtn.setOnClickListener { addOpponent() }
+        resetBtn.setOnClickListener { resetAllColors() }
 
         root.addView(toolbar)
         root.addView(title)
@@ -181,10 +197,10 @@ object OverlayPanelManager {
             orientation = LinearLayout.HORIZONTAL
         }
 
-        colors.addView(colorButton(context, UnoColor.Red))
-        colors.addView(colorButton(context, UnoColor.Yellow))
-        colors.addView(colorButton(context, UnoColor.Blue))
-        colors.addView(colorButton(context, UnoColor.Green))
+        colors.addView(colorButton(context, opponent, UnoColor.Red, onChanged))
+        colors.addView(colorButton(context, opponent, UnoColor.Yellow, onChanged))
+        colors.addView(colorButton(context, opponent, UnoColor.Blue, onChanged))
+        colors.addView(colorButton(context, opponent, UnoColor.Green, onChanged))
 
         row.addView(name)
         row.addView(colors)
@@ -192,8 +208,13 @@ object OverlayPanelManager {
         return row
     }
 
-    private fun colorButton(context: Context, color: UnoColor): View {
-        // OCM-05-01 仅要求默认四色为“彩色(未排除态)”，交互切换在 OCM-05-02 实现。
+    private fun colorButton(
+        context: Context,
+        opponent: Opponent,
+        color: UnoColor,
+        onChanged: () -> Unit
+    ): View {
+        val isExcluded = opponent.excluded[color] == true
         val btn = Button(context).apply {
             text = when (color) {
                 UnoColor.Red -> "R"
@@ -201,15 +222,25 @@ object OverlayPanelManager {
                 UnoColor.Blue -> "B"
                 UnoColor.Green -> "G"
             }
-            val bg = when (color) {
+            val colorBg = when (color) {
                 UnoColor.Red -> 0xFFFF5252.toInt()
                 UnoColor.Yellow -> 0xFFFFD740.toInt()
                 UnoColor.Blue -> 0xFF448AFF.toInt()
                 UnoColor.Green -> 0xFF69F0AE.toInt()
             }
-            setBackgroundColor(bg)
+            val excludedBg = 0xFF9E9E9E.toInt()
+            setBackgroundColor(if (isExcluded) excludedBg else colorBg)
             setOnClickListener {
-                Toast.makeText(context, "颜色切换将在后续步骤实现", Toast.LENGTH_SHORT).show()
+                OverlayStateRepository.update(context) { cur ->
+                    cur.copy(
+                        opponents = cur.opponents.map { o ->
+                            if (o.id != opponent.id) return@map o
+                            val next = (o.excluded[color] != true)
+                            o.copy(excluded = o.excluded + (color to next))
+                        }
+                    )
+                }
+                onChanged()
             }
         }
         return btn
