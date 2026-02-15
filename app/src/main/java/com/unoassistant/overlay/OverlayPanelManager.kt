@@ -32,6 +32,8 @@ object OverlayPanelManager {
     private var controlView: View? = null
     private var controlLayout: WindowManager.LayoutParams? = null
     private var controlLockButton: ImageButton? = null
+    private var controlAddButton: ImageButton? = null
+    private var controlRemoveButton: ImageButton? = null
     private var controlExpanded: View? = null
     private var controlCollapsedView: View? = null
     private val opponentViews = mutableMapOf<String, View>()
@@ -89,7 +91,7 @@ object OverlayPanelManager {
         val state = OverlayStateRepository.get(appContext)
 
         if (controlView == null) {
-            val panel = buildControlPanelView(appContext, state)
+            val panel = buildControlPanelView(appContext, OverlayStateRepository.get(appContext))
             panel.alpha = state.alpha
             // 先测量一次，便于根据“收起/展开”计算初始 x/y
             panel.measure(
@@ -104,8 +106,12 @@ object OverlayPanelManager {
             controlLayout = lp
         }
 
+        // 控制条创建完成后再补齐，确保默认落点可避开操作按钮区域（只补齐不裁剪）
+        ensureOpponentCount(appContext, OverlayStateRepository.get(appContext).maxOpponents)
+
         syncOpponentWindows(appContext)
         updateLockButtonText(appContext)
+        updateControlAddRemoveEnabled(appContext)
         applyControlCollapsedState(appContext)
         return true
     }
@@ -124,6 +130,8 @@ object OverlayPanelManager {
         controlView = null
         controlLayout = null
         controlLockButton = null
+        controlAddButton = null
+        controlRemoveButton = null
         controlExpanded = null
         controlCollapsedView = null
     }
@@ -151,7 +159,8 @@ object OverlayPanelManager {
             setTextColor(0xFF334155.toInt())
         }
 
-        val addBtn = controlIconButton(context, android.R.drawable.ic_input_add, "添加对手")
+        val addBtn = controlIconButton(context, android.R.drawable.ic_input_add, "增加对手")
+        val removeBtn = controlIconButton(context, android.R.drawable.ic_delete, "减少对手")
         val lockBtn = controlIconButton(context, android.R.drawable.ic_lock_lock, "锁定拖动")
         val resetBtn = controlIconButton(context, android.R.drawable.ic_menu_rotate, "重置颜色")
         val collapseBtn = controlIconButton(context, android.R.drawable.ic_media_previous, "收起到侧边")
@@ -161,6 +170,7 @@ object OverlayPanelManager {
             val curState = OverlayStateRepository.get(context)
             if (curState.opponents.size >= curState.maxOpponents) {
                 Toast.makeText(context, "已达上限：最多 ${curState.maxOpponents} 名对手", Toast.LENGTH_SHORT).show()
+                updateControlAddRemoveEnabled(context)
                 return@setOnClickListener
             }
             OverlayStateRepository.update(context) { cur ->
@@ -171,6 +181,20 @@ object OverlayPanelManager {
                 cur.copy(opponents = cur.opponents + Opponent.default(id, name).copy(offsetX = pos.first, offsetY = pos.second))
             }
             syncOpponentWindows(context)
+            updateControlAddRemoveEnabled(context)
+        }
+
+        removeBtn.setOnClickListener {
+            val curState = OverlayStateRepository.get(context)
+            if (curState.opponents.isEmpty()) {
+                updateControlAddRemoveEnabled(context)
+                return@setOnClickListener
+            }
+            OverlayStateRepository.update(context) { cur ->
+                cur.copy(opponents = cur.opponents.dropLast(1))
+            }
+            syncOpponentWindows(context)
+            updateControlAddRemoveEnabled(context)
         }
 
         lockBtn.setOnClickListener {
@@ -187,6 +211,7 @@ object OverlayPanelManager {
                 cur.copy(opponents = cur.opponents.map { it.copy(excluded = UnoColor.entries.associateWith { false }) })
             }
             syncOpponentWindows(context)
+            updateControlAddRemoveEnabled(context)
             Toast.makeText(context, "已重置所有颜色", Toast.LENGTH_SHORT).show()
         }
 
@@ -211,6 +236,7 @@ object OverlayPanelManager {
             marginEnd = dp(context, 6)
         }
         addBtn.layoutParams = buttonLayoutParams(context, controlBtnWidthDp, controlBtnHeightDp, controlBtnMarginEndDp)
+        removeBtn.layoutParams = buttonLayoutParams(context, controlBtnWidthDp, controlBtnHeightDp, controlBtnMarginEndDp)
         lockBtn.layoutParams = buttonLayoutParams(context, controlBtnWidthDp, controlBtnHeightDp, controlBtnMarginEndDp)
         resetBtn.layoutParams = buttonLayoutParams(context, controlBtnWidthDp, controlBtnHeightDp, controlBtnMarginEndDp)
         collapseBtn.layoutParams = buttonLayoutParams(context, controlBtnWidthDp, controlBtnHeightDp, controlBtnMarginEndDp)
@@ -218,6 +244,7 @@ object OverlayPanelManager {
 
         expanded.addView(dragHandle)
         expanded.addView(addBtn)
+        expanded.addView(removeBtn)
         expanded.addView(lockBtn)
         expanded.addView(resetBtn)
         expanded.addView(collapseBtn)
@@ -242,10 +269,46 @@ object OverlayPanelManager {
         controlCollapsedView = collapsed
 
         controlLockButton = lockBtn
+        controlAddButton = addBtn
+        controlRemoveButton = removeBtn
         updateLockButtonText(context)
+        updateControlAddRemoveEnabled(context)
 
         attachControlDrag(context, dragHandle, root)
         return root
+    }
+
+    private fun updateControlAddRemoveEnabled(context: Context) {
+        val state = OverlayStateRepository.get(context)
+        val add = controlAddButton
+        val remove = controlRemoveButton
+        if (add != null) {
+            val enabled = state.opponents.size < state.maxOpponents
+            add.isEnabled = enabled
+            add.alpha = if (enabled) 1.0f else 0.35f
+        }
+        if (remove != null) {
+            val enabled = state.opponents.isNotEmpty()
+            remove.isEnabled = enabled
+            remove.alpha = if (enabled) 1.0f else 0.35f
+        }
+    }
+
+    private fun ensureOpponentCount(context: Context, target: Int) {
+        if (target <= 0) return
+        val cur = OverlayStateRepository.get(context)
+        if (cur.opponents.size >= target) return
+        OverlayStateRepository.update(context) { s ->
+            var opponents = s.opponents
+            while (opponents.size < target) {
+                val nextIndex = nextOpponentIndex(opponents)
+                val id = UUID.randomUUID().toString()
+                val name = "对手 $nextIndex"
+                val pos = defaultOpponentPosition(context, opponents.size, controlView, s.copy(opponents = opponents))
+                opponents = opponents + Opponent.default(id, name).copy(offsetX = pos.first, offsetY = pos.second)
+            }
+            s.copy(opponents = opponents)
+        }
     }
 
     private fun initialControlPosition(context: Context, state: OverlayState): Pair<Int, Int> {
@@ -403,22 +466,9 @@ object OverlayPanelManager {
             setPadding(0, 0, opponentNameEndPaddingPx, 0)
         }
 
-        val deleteBtn = Button(context).apply {
-            // 按钮尽量小，避免遮挡对手信息与色块区域
-            text = "X"
-            textSize = deleteBtnTextSizeSp
-            layoutParams = buttonLayoutParams(context, deleteBtnWidthDp, deleteBtnHeightDp)
-            setOnClickListener {
-                OverlayStateRepository.update(context) { cur ->
-                    cur.copy(opponents = cur.opponents.filterNot { it.id == opponent.id })
-                }
-                syncOpponentWindows(context)
-            }
-        }
-
         header.addView(dragHandle)
         header.addView(name)
-        header.addView(deleteBtn)
+        // 删除入口移到控制条 +/-，避免对手窗内出现“叉”干扰视觉与误触
 
         val colors = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
 
