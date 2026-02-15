@@ -10,6 +10,7 @@ import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.unoassistant.overlay.persist.OverlayStateRepository
 
 /**
  * 最小悬浮面板管理器：
@@ -29,8 +30,12 @@ object OverlayPanelManager {
         if (!canDrawOverlays(appContext)) return false
         if (overlayView != null) return true
 
+        // 启动状态仓库并读取初始配置（位置/透明度/锁定等后续逐步接入）
+        val state = OverlayStateRepository.get(appContext)
+
         val wm = appContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val view = buildOverlayView(appContext)
+        view.alpha = state.alpha
         val lp = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -40,8 +45,8 @@ object OverlayPanelManager {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = 0
-            y = 200
+            x = state.overlayX
+            y = state.overlayY
         }
 
         wm.addView(view, lp)
