@@ -115,10 +115,7 @@ fun OverlayControlPage() {
                 .padding(horizontal = 18.dp, vertical = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            HeroCard(
-                hasOverlayPermission = hasOverlayPermission,
-                isOverlayShowing = isOverlayShowing
-            )
+            HeroCard()
 
             StatusCard(
                 hasOverlayPermission = hasOverlayPermission,
@@ -164,10 +161,7 @@ fun OverlayControlPage() {
 }
 
 @Composable
-private fun HeroCard(
-    hasOverlayPermission: Boolean,
-    isOverlayShowing: Boolean
-) {
+private fun HeroCard() {
     Card(
         shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent),
@@ -194,16 +188,6 @@ private fun HeroCard(
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color(0xFFD9E8FF)
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    StatusPill(
-                        label = if (hasOverlayPermission) "已授权" else "未授权",
-                        ok = hasOverlayPermission
-                    )
-                    StatusPill(
-                        label = if (isOverlayShowing) "悬浮开启" else "悬浮关闭",
-                        ok = isOverlayShowing
-                    )
-                }
             }
         }
     }
