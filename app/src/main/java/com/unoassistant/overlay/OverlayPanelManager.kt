@@ -291,10 +291,16 @@ object OverlayPanelManager {
                 UnoColor.Red -> 0xFFFF5252.toInt()
                 UnoColor.Yellow -> 0xFFFFD740.toInt()
                 UnoColor.Blue -> 0xFF448AFF.toInt()
-                UnoColor.Green -> 0xFF69F0AE.toInt()
+                // 绿色改为更深色，避免在白底上“看不见”
+                UnoColor.Green -> 0xFF1B5E20.toInt()
             }
-            val excludedBg = 0xFF9E9E9E.toInt()
+            val colorText = when (color) {
+                UnoColor.Yellow -> 0xFF1A1A1A.toInt()
+                else -> 0xFFFFFFFF.toInt()
+            }
+            val excludedBg = 0xFF757575.toInt()
             setBackgroundColor(if (isExcluded) excludedBg else colorBg)
+            setTextColor(if (isExcluded) 0xFFFFFFFF.toInt() else colorText)
             setOnClickListener {
                 OverlayStateRepository.update(context) { cur ->
                     cur.copy(
