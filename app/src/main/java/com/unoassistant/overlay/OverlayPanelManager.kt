@@ -9,6 +9,8 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.ImageButton
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -26,7 +28,7 @@ import java.util.UUID
 object OverlayPanelManager {
     private var windowManager: WindowManager? = null
     private var controlView: View? = null
-    private var controlLockButton: Button? = null
+    private var controlLockButton: ImageButton? = null
     private val opponentViews = mutableMapOf<String, View>()
     private val opponentLayouts = mutableMapOf<String, WindowManager.LayoutParams>()
     private val opponentColorButtons = mutableMapOf<String, MutableMap<UnoColor, Button>>()
@@ -40,26 +42,25 @@ object OverlayPanelManager {
     private const val opponentHeaderBottomPaddingPx = 8
     private const val opponentNameEndPaddingPx = 8
 
-    private const val addBtnWidthDp = 48
-    private const val closeBtnWidthDp = 48
-    private const val lockResetBtnWidthDp = 64
-    private const val controlBtnHeightDp = 40
-    private const val controlBtnMarginEndDp = 6
+    private const val controlBtnWidthDp = 42
+    private const val controlBtnHeightDp = 42
+    private const val controlBtnMarginEndDp = 4
 
     private const val deleteBtnWidthDp = 56
     private const val deleteBtnHeightDp = 32
     private const val deleteBtnTextSizeSp = 11f
 
-    private const val colorBtnWidthDp = 64
-    private const val colorBtnHeightDp = 40
-    private const val colorBtnMarginEndDp = 4
-    private const val colorBtnMarginBottomDp = 4
+    // “牌”样式：窄而高，单行 4 张横向排列
+    private const val colorBtnWidthDp = 42
+    private const val colorBtnHeightDp = 58
+    private const val colorBtnMarginEndDp = 3
+    private const val colorBtnMarginBottomDp = 0
 
-    private const val defaultControlWidthDp = 250
+    private const val defaultControlWidthDp = 210
     private const val defaultControlHeightDp = 56
     private const val opponentOffsetFromControlDp = 12
-    private const val opponentEstimatedWidthDp = 152
-    private const val opponentEstimatedHeightDp = 140
+    private const val opponentEstimatedWidthDp = 230
+    private const val opponentEstimatedHeightDp = 125
     private const val clockwiseSlotCount = 8
     private const val minTopInsetDp = 24
 
@@ -120,10 +121,10 @@ object OverlayPanelManager {
             )
         }
 
-        val addBtn = Button(context).apply { text = "+" }
-        val lockBtn = Button(context)
-        val resetBtn = Button(context).apply { text = "重置" }
-        val closeBtn = Button(context).apply { text = "关" }
+        val addBtn = controlIconButton(context, android.R.drawable.ic_input_add, "添加对手")
+        val lockBtn = controlIconButton(context, android.R.drawable.ic_lock_lock, "锁定拖动")
+        val resetBtn = controlIconButton(context, android.R.drawable.ic_menu_rotate, "重置颜色")
+        val closeBtn = controlIconButton(context, android.R.drawable.ic_menu_close_clear_cancel, "关闭悬浮")
 
         addBtn.setOnClickListener {
             OverlayStateRepository.update(context) { cur ->
@@ -159,10 +160,10 @@ object OverlayPanelManager {
         }
 
         // 控制条尽量紧凑，减少遮挡游戏区域
-        addBtn.layoutParams = buttonLayoutParams(context, addBtnWidthDp, controlBtnHeightDp, controlBtnMarginEndDp)
-        lockBtn.layoutParams = buttonLayoutParams(context, lockResetBtnWidthDp, controlBtnHeightDp, controlBtnMarginEndDp)
-        resetBtn.layoutParams = buttonLayoutParams(context, lockResetBtnWidthDp, controlBtnHeightDp, controlBtnMarginEndDp)
-        closeBtn.layoutParams = buttonLayoutParams(context, closeBtnWidthDp, controlBtnHeightDp)
+        addBtn.layoutParams = buttonLayoutParams(context, controlBtnWidthDp, controlBtnHeightDp, controlBtnMarginEndDp)
+        lockBtn.layoutParams = buttonLayoutParams(context, controlBtnWidthDp, controlBtnHeightDp, controlBtnMarginEndDp)
+        resetBtn.layoutParams = buttonLayoutParams(context, controlBtnWidthDp, controlBtnHeightDp, controlBtnMarginEndDp)
+        closeBtn.layoutParams = buttonLayoutParams(context, controlBtnWidthDp, controlBtnHeightDp)
 
         root.addView(addBtn)
         root.addView(lockBtn)
@@ -256,24 +257,19 @@ object OverlayPanelManager {
         header.addView(name)
         header.addView(deleteBtn)
 
-        val colors = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-        val top = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
-        val bottom = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+        val colors = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
 
         val colorButtons = mutableMapOf<UnoColor, Button>()
-        fun addColor(parent: LinearLayout, color: UnoColor) {
+        fun addColor(color: UnoColor) {
             val btn = colorButton(context, opponent, color)
             colorButtons[color] = btn
-            parent.addView(btn)
+            colors.addView(btn)
         }
 
-        addColor(top, UnoColor.Red)
-        addColor(top, UnoColor.Yellow)
-        addColor(bottom, UnoColor.Blue)
-        addColor(bottom, UnoColor.Green)
-
-        colors.addView(top)
-        colors.addView(bottom)
+        addColor(UnoColor.Red)
+        addColor(UnoColor.Yellow)
+        addColor(UnoColor.Blue)
+        addColor(UnoColor.Green)
 
         root.addView(header)
         root.addView(colors)
@@ -363,7 +359,16 @@ object OverlayPanelManager {
 
     private fun updateLockButtonText(context: Context) {
         val locked = OverlayStateRepository.get(context).locked
-        controlLockButton?.text = if (locked) "已锁定" else "已解锁"
+        val btn = controlLockButton ?: return
+        if (locked) {
+            btn.setImageResource(android.R.drawable.ic_lock_lock)
+            btn.contentDescription = "已锁定"
+            btn.tooltipText = "已锁定（长按查看）"
+        } else {
+            btn.setImageResource(android.R.drawable.ic_menu_view)
+            btn.contentDescription = "已解锁"
+            btn.tooltipText = "已解锁（长按查看）"
+        }
     }
 
     private fun nextOpponentIndex(opponents: List<Opponent>): Int {
@@ -429,6 +434,19 @@ object OverlayPanelManager {
         return LinearLayout.LayoutParams(dp(context, widthDp), dp(context, heightDp)).apply {
             if (marginEndDp > 0) marginEnd = dp(context, marginEndDp)
             if (bottomMarginDp > 0) bottomMargin = dp(context, bottomMarginDp)
+        }
+    }
+
+    private fun controlIconButton(
+        context: Context,
+        iconRes: Int,
+        tooltip: String
+    ): ImageButton {
+        return ImageButton(context).apply {
+            setImageResource(iconRes)
+            contentDescription = tooltip
+            tooltipText = tooltip
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
         }
     }
 
