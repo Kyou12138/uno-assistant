@@ -7,6 +7,7 @@ import android.graphics.drawable.RippleDrawable
 import android.graphics.PixelFormat
 import android.os.Build
 import android.provider.Settings
+import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -30,6 +31,7 @@ import java.util.UUID
  * - N 个“对手信息”独立悬浮窗（每个对手一个 WindowManager View）
  */
 object OverlayPanelManager {
+    private const val TAG = "OverlayPanelManager"
     private var windowManager: WindowManager? = null
     private var controlView: View? = null
     private var controlLayout: WindowManager.LayoutParams? = null
@@ -465,10 +467,17 @@ object OverlayPanelManager {
                     if (existingLayout.x != opponent.offsetX || existingLayout.y != opponent.offsetY) {
                         existingLayout.x = opponent.offsetX
                         existingLayout.y = opponent.offsetY
-                        runCatching { wm.updateViewLayout(existingView, existingLayout) }
+                        val updated = safeUpdateViewLayout(wm, existingView, existingLayout)
+                        if (!updated) {
+                            // 视图附着状态异常时回收缓存，允许后续按最新状态重建，避免崩溃循环。
+                            runCatching { wm.removeView(existingView) }
+                            opponentViews.remove(opponent.id)
+                            opponentLayouts.remove(opponent.id)
+                            opponentColorButtons.remove(opponent.id)
+                        }
                     }
                 }
-                return@forEachIndexed
+                if (opponentViews.containsKey(opponent.id)) return@forEachIndexed
             }
 
             val pos = if (opponent.offsetX == 0 && opponent.offsetY == 0) {
@@ -480,9 +489,13 @@ object OverlayPanelManager {
 
             val layout = newLayoutParams(pos.first, pos.second)
             val view = buildOpponentWindow(context, opponent.copy(offsetX = pos.first, offsetY = pos.second), layout)
-            wm.addView(view, layout)
-            opponentViews[opponent.id] = view
-            opponentLayouts[opponent.id] = layout
+            val added = safeAddView(wm, view, layout)
+            if (added) {
+                opponentViews[opponent.id] = view
+                opponentLayouts[opponent.id] = layout
+            } else {
+                opponentColorButtons.remove(opponent.id)
+            }
         }
     }
 
@@ -591,7 +604,11 @@ object OverlayPanelManager {
                     if (dragging) {
                         layout.x = startX + dx
                         layout.y = startY + dy
-                        wm.updateViewLayout(targetView, layout)
+                        val updated = safeUpdateViewLayout(wm, targetView, layout)
+                        if (!updated) {
+                            dragging = false
+                            return@OnTouchListener false
+                        }
                     }
                     true
                 }
@@ -608,7 +625,10 @@ object OverlayPanelManager {
                         )
                         layout.x = final.first
                         layout.y = final.second
-                        wm.updateViewLayout(targetView, layout)
+                        val updated = safeUpdateViewLayout(wm, targetView, layout)
+                        if (!updated) {
+                            return@OnTouchListener false
+                        }
                         OverlayStateRepository.update(context) { cur ->
                             cur.copy(opponents = cur.opponents.map { o ->
                                 if (o.id == opponentId) o.copy(offsetX = final.first, offsetY = final.second) else o
@@ -624,6 +644,36 @@ object OverlayPanelManager {
         }
 
         dragHandles.forEach { h -> h.setOnTouchListener(listener) }
+    }
+
+    private fun safeAddView(
+        wm: WindowManager,
+        view: View,
+        layout: WindowManager.LayoutParams
+    ): Boolean {
+        if (view.parent != null || view.isAttachedToWindow) return true
+        return runCatching {
+            wm.addView(view, layout)
+            true
+        }.getOrElse {
+            Log.w(TAG, "safeAddView failed", it)
+            false
+        }
+    }
+
+    private fun safeUpdateViewLayout(
+        wm: WindowManager,
+        view: View,
+        layout: WindowManager.LayoutParams
+    ): Boolean {
+        if (view.parent == null && !view.isAttachedToWindow) return false
+        return runCatching {
+            wm.updateViewLayout(view, layout)
+            true
+        }.getOrElse {
+            Log.w(TAG, "safeUpdateViewLayout failed", it)
+            false
+        }
     }
 
     private fun colorButton(context: Context, opponent: Opponent, color: UnoColor): Button {
