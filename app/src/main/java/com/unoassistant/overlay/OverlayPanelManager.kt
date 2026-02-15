@@ -57,7 +57,6 @@ object OverlayPanelManager {
         }
 
         wm.addView(view, lp)
-        attachDragHandler(appContext, view, wm, lp)
         windowManager = wm
         overlayView = view
         return true
@@ -111,10 +110,8 @@ object OverlayPanelManager {
         toolbar.addView(closeBtn)
 
         val title = TextView(context).apply {
-            text = "UNO 悬浮标记面板"
+            text = "UNO 悬浮标记面板（解锁后可拖动对手名）"
             textSize = 14f
-            // 拖动手势仅挂在标题区域，降低误触概率。
-            tag = "drag_handle"
         }
 
         val listScroll = ScrollView(context)
@@ -182,49 +179,6 @@ object OverlayPanelManager {
         return root
     }
 
-    private fun attachDragHandler(
-        context: Context,
-        root: View,
-        wm: WindowManager,
-        lp: WindowManager.LayoutParams
-    ) {
-        val dragHandle = root.findViewWithTag<View>("drag_handle") ?: return
-        var lastRawX = 0f
-        var lastRawY = 0f
-
-        dragHandle.setOnTouchListener { _, event ->
-            val locked = OverlayStateRepository.get(context).locked
-            if (locked) {
-                return@setOnTouchListener false
-            }
-
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    lastRawX = event.rawX
-                    lastRawY = event.rawY
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    val dx = (event.rawX - lastRawX).toInt()
-                    val dy = (event.rawY - lastRawY).toInt()
-                    lp.x += dx
-                    lp.y += dy
-                    wm.updateViewLayout(root, lp)
-                    lastRawX = event.rawX
-                    lastRawY = event.rawY
-                    true
-                }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    OverlayStateRepository.update(context) { cur ->
-                        cur.copy(overlayX = lp.x, overlayY = lp.y)
-                    }
-                    true
-                }
-                else -> false
-            }
-        }
-    }
-
     private fun buildOpponentRow(
         context: Context,
         opponent: Opponent,
@@ -236,7 +190,7 @@ object OverlayPanelManager {
         }
 
         val name = TextView(context).apply {
-            text = opponent.name
+            text = "${opponent.name} ↕"
             textSize = 12f
             setPadding(0, 0, 12, 0)
         }
@@ -264,7 +218,59 @@ object OverlayPanelManager {
         row.addView(name)
         row.addView(colors)
         row.addView(deleteBtn)
+        row.translationX = opponent.offsetX.toFloat()
+        row.translationY = opponent.offsetY.toFloat()
+        attachOpponentDragHandle(context, name, row, opponent, onChanged)
         return row
+    }
+
+    private fun attachOpponentDragHandle(
+        context: Context,
+        dragHandle: View,
+        row: View,
+        opponent: Opponent,
+        onChanged: () -> Unit
+    ) {
+        var startRawX = 0f
+        var startRawY = 0f
+        var startTx = 0f
+        var startTy = 0f
+
+        dragHandle.setOnTouchListener { _, event ->
+            val locked = OverlayStateRepository.get(context).locked
+            if (locked) {
+                return@setOnTouchListener false
+            }
+
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    startRawX = event.rawX
+                    startRawY = event.rawY
+                    startTx = row.translationX
+                    startTy = row.translationY
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    row.translationX = startTx + (event.rawX - startRawX)
+                    row.translationY = startTy + (event.rawY - startRawY)
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    val finalX = row.translationX.toInt()
+                    val finalY = row.translationY.toInt()
+                    OverlayStateRepository.update(context) { cur ->
+                        cur.copy(
+                            opponents = cur.opponents.map { o ->
+                                if (o.id == opponent.id) o.copy(offsetX = finalX, offsetY = finalY) else o
+                            }
+                        )
+                    }
+                    onChanged()
+                    true
+                }
+                else -> false
+            }
+        }
     }
 
     private fun colorButton(

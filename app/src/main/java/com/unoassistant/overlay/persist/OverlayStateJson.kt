@@ -15,7 +15,7 @@ object OverlayStateJson {
     fun encode(state: OverlayState): String {
         // 采用非常保守的键值拼接格式，避免复杂 JSON 依赖。
         // 格式：
-        // x=0;y=200;alpha=1.0;locked=1;opponents=[id|name|R0Y0B0G0,...]
+        // x=0;y=200;alpha=1.0;locked=1;opponents=[id|name|R0Y0B0G0|ox|oy,...]
         val opponents = state.opponents.joinToString(separator = ",") { o ->
             val flags = buildString {
                 append("R"); append(if (o.excluded[UnoColor.Red] == true) 1 else 0)
@@ -23,7 +23,7 @@ object OverlayStateJson {
                 append("B"); append(if (o.excluded[UnoColor.Blue] == true) 1 else 0)
                 append("G"); append(if (o.excluded[UnoColor.Green] == true) 1 else 0)
             }
-            "${escape(o.id)}|${escape(o.name)}|$flags"
+            "${escape(o.id)}|${escape(o.name)}|$flags|${o.offsetX}|${o.offsetY}"
         }
         return "x=${state.overlayX};y=${state.overlayY};alpha=${state.alpha};locked=${if (state.locked) 1 else 0};opponents=[$opponents]"
     }
@@ -73,6 +73,8 @@ object OverlayStateJson {
             val id = unescape(seg[0])
             val name = unescape(seg[1])
             val flags = seg[2]
+            val ox = seg.getOrNull(3)?.toIntOrNull() ?: 0
+            val oy = seg.getOrNull(4)?.toIntOrNull() ?: 0
             Opponent(
                 id = id,
                 name = name,
@@ -81,7 +83,9 @@ object OverlayStateJson {
                     UnoColor.Yellow to readFlag(flags, 'Y'),
                     UnoColor.Blue to readFlag(flags, 'B'),
                     UnoColor.Green to readFlag(flags, 'G')
-                )
+                ),
+                offsetX = ox,
+                offsetY = oy
             )
         }
     }

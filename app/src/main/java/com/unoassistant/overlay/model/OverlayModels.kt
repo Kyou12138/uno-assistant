@@ -14,12 +14,15 @@ enum class UnoColor {
 data class Opponent(
     val id: String,
     val name: String,
-    val excluded: Map<UnoColor, Boolean>
+    val excluded: Map<UnoColor, Boolean>,
+    // 对手卡片相对位移（用于自定义布局拖动）
+    val offsetX: Int,
+    val offsetY: Int
 ) {
     companion object {
         fun default(id: String, name: String): Opponent {
             val excluded = UnoColor.entries.associateWith { false }
-            return Opponent(id = id, name = name, excluded = excluded)
+            return Opponent(id = id, name = name, excluded = excluded, offsetX = 0, offsetY = 0)
         }
     }
 }
@@ -46,4 +49,3 @@ data class OverlayState(
         }
     }
 }
-
