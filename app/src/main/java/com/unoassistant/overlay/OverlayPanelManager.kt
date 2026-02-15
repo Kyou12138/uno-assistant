@@ -44,22 +44,23 @@ object OverlayPanelManager {
 
     private const val controlPaddingHorizontalPx = 10
     private const val controlPaddingVerticalPx = 8
-    private const val opponentPaddingPx = 10
-    private const val opponentHeaderBottomPaddingPx = 8
-    private const val opponentNameEndPaddingPx = 8
+    private const val opponentPaddingPx = 8
+    private const val opponentHeaderBottomPaddingPx = 6
+    private const val opponentNameEndPaddingPx = 6
+    private const val opponentHandleEndPaddingPx = 6
 
     private const val controlBtnWidthDp = 42
     private const val controlBtnHeightDp = 42
     private const val controlBtnMarginEndDp = 4
 
-    private const val deleteBtnWidthDp = 56
-    private const val deleteBtnHeightDp = 32
-    private const val deleteBtnTextSizeSp = 11f
+    private const val deleteBtnWidthDp = 44
+    private const val deleteBtnHeightDp = 28
+    private const val deleteBtnTextSizeSp = 10f
 
     // “牌”样式：窄而高，单行 4 张横向排列
-    private const val colorBtnWidthDp = 42
-    private const val colorBtnHeightDp = 58
-    private const val colorBtnMarginEndDp = 3
+    private const val colorBtnWidthDp = 38
+    private const val colorBtnHeightDp = 52
+    private const val colorBtnMarginEndDp = 2
     private const val colorBtnMarginBottomDp = 0
 
     private const val defaultControlWidthDp = 210
@@ -387,9 +388,18 @@ object OverlayPanelManager {
             setPadding(0, 0, 0, opponentHeaderBottomPaddingPx)
         }
 
+        val dragHandle = TextView(context).apply {
+            text = "⋮⋮"
+            textSize = 13f
+            tooltipText = "拖动对手窗"
+            contentDescription = "拖动对手窗手柄"
+            setPadding(0, 0, opponentHandleEndPaddingPx, 0)
+            setTextColor(0xFF334155.toInt())
+        }
+
         val name = TextView(context).apply {
-            text = "${opponent.name} ↕"
-            textSize = 12f
+            text = opponent.name
+            textSize = 11f
             setPadding(0, 0, opponentNameEndPaddingPx, 0)
         }
 
@@ -406,6 +416,7 @@ object OverlayPanelManager {
             }
         }
 
+        header.addView(dragHandle)
         header.addView(name)
         header.addView(deleteBtn)
 
@@ -429,7 +440,7 @@ object OverlayPanelManager {
         // 保存按钮引用，便于后续“原地更新样式”而不是重建窗口
         opponentColorButtons[opponent.id] = colorButtons
 
-        attachOpponentWindowDrag(context, name, opponent.id, root, layout)
+        attachOpponentWindowDrag(context, dragHandle, opponent.id, root, layout)
         return root
     }
 
