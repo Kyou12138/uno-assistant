@@ -754,12 +754,15 @@ object OverlayPanelManager {
     ): Pair<Int, Int> {
         val screenW = context.resources.displayMetrics.widthPixels
         val screenH = context.resources.displayMetrics.heightPixels
+        val landscape = screenW > screenH
         val minY = dp(context, minTopInsetDp)
         val opponentW = dp(context, opponentEstimatedWidthDp)
         val opponentH = dp(context, opponentEstimatedHeightDp)
         val edgeGap = dp(context, 12)
 
-        // 默认 3 人场景优先给出稳定直观的落位：左中 / 中上 / 右中
+        // 默认 3 人场景优先给出稳定直观的落位：
+        // - 竖屏：左中 / 中上 / 右中
+        // - 横屏：左中 / 中中 / 右中（顶部高度更紧凑，避免“中上”过于贴边）
         if (index == 0) {
             val x = edgeGap.coerceIn(0, maxOf(0, screenW - opponentW))
             val y = ((screenH - opponentH) / 2).coerceIn(minY, maxOf(minY, screenH - opponentH))
@@ -767,7 +770,11 @@ object OverlayPanelManager {
         }
         if (index == 1) {
             val x = ((screenW - opponentW) / 2).coerceIn(0, maxOf(0, screenW - opponentW))
-            val y = (minY + dp(context, 24)).coerceIn(minY, maxOf(minY, screenH - opponentH))
+            val y = if (landscape) {
+                ((screenH - opponentH) / 2)
+            } else {
+                (minY + dp(context, 24))
+            }.coerceIn(minY, maxOf(minY, screenH - opponentH))
             return x to y
         }
         if (index == 2) {
