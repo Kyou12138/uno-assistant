@@ -9,7 +9,9 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -17,7 +19,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -39,6 +46,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -72,6 +80,8 @@ fun OverlayControlPage() {
     var hasOverlayPermission by remember { mutableStateOf(canDrawOverlays(context)) }
     var isOverlayShowing by remember { mutableStateOf(OverlayPanelManager.isShowing()) }
     var maxOpponents by remember { mutableStateOf(OverlayStateRepository.get(context).maxOpponents) }
+    val canDecreaseMax = maxOpponents > 1
+    val canIncreaseMax = maxOpponents < 12
 
     DisposableEffect(lifecycleOwner, context) {
         val observer = LifecycleEventObserver { _, event ->
@@ -90,24 +100,24 @@ fun OverlayControlPage() {
             .fillMaxSize()
             .background(
                 brush = Brush.verticalGradient(
-                    colors = listOf(Color(0xFFF7F5F2), Color(0xFFEAF5F3), Color(0xFFF7F5F2))
+                    colors = listOf(
+                        Color(0xFFF5F7FC),
+                        Color(0xFFEAF4FF),
+                        Color(0xFFF2F6FF)
+                    )
                 )
             )
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 20.dp, vertical = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 18.dp, vertical = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(
-                text = "UNO 记牌助手",
-                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
-            )
-            Text(
-                text = "轻量悬浮记录，专注手动推理",
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color(0xFF475569)
+            HeroCard(
+                hasOverlayPermission = hasOverlayPermission,
+                isOverlayShowing = isOverlayShowing
             )
 
             StatusCard(
@@ -133,6 +143,8 @@ fun OverlayControlPage() {
                     Toast.makeText(context, "已关闭悬浮面板", Toast.LENGTH_SHORT).show()
                 },
                 maxOpponents = maxOpponents,
+                canIncreaseMax = canIncreaseMax,
+                canDecreaseMax = canDecreaseMax,
                 onIncreaseMax = {
                     val next = (maxOpponents + 1).coerceAtMost(12)
                     OverlayStateRepository.update(context) { cur -> cur.copy(maxOpponents = next) }
@@ -146,7 +158,53 @@ fun OverlayControlPage() {
             )
 
             GuideCard()
-            Spacer(modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+    }
+}
+
+@Composable
+private fun HeroCard(
+    hasOverlayPermission: Boolean,
+    isOverlayShowing: Boolean
+) {
+    Card(
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    brush = Brush.linearGradient(
+                        colors = listOf(Color(0xFF0F172A), Color(0xFF0F2E4D), Color(0xFF1B4A76))
+                    )
+                )
+                .padding(horizontal = 16.dp, vertical = 16.dp)
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "UNO 记牌助手",
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = Color.White
+                )
+                Text(
+                    text = "更简洁的悬浮记录体验，专注手动推理与临场决策",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color(0xFFD9E8FF)
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StatusPill(
+                        label = if (hasOverlayPermission) "已授权" else "未授权",
+                        ok = hasOverlayPermission
+                    )
+                    StatusPill(
+                        label = if (isOverlayShowing) "悬浮开启" else "悬浮关闭",
+                        ok = isOverlayShowing
+                    )
+                }
+            }
         }
     }
 }
@@ -157,18 +215,22 @@ private fun StatusCard(
     isOverlayShowing: Boolean
 ) {
     Card(
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.9f)),
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, Color(0x1A0F172A)),
+        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.94f)),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(15.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text("当前状态", style = MaterialTheme.typography.titleMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("运行状态", style = MaterialTheme.typography.titleMedium)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 StatusPill(
                     label = if (hasOverlayPermission) "权限已授权" else "权限未授权",
                     ok = hasOverlayPermission
@@ -186,11 +248,19 @@ private fun StatusCard(
 private fun StatusPill(label: String, ok: Boolean) {
     val bg = if (ok) Color(0xFFE6FFFA) else Color(0xFFFFF1F2)
     val fg = if (ok) Color(0xFF0F766E) else Color(0xFFBE123C)
-    Box(
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
         modifier = Modifier
             .background(bg, RoundedCornerShape(999.dp))
+            .border(1.dp, fg.copy(alpha = 0.22f), RoundedCornerShape(999.dp))
             .padding(horizontal = 10.dp, vertical = 6.dp)
     ) {
+        Box(
+            modifier = Modifier
+                .size(6.dp)
+                .background(fg, CircleShape)
+        )
         Text(text = label, color = fg, style = MaterialTheme.typography.bodySmall)
     }
 }
@@ -201,50 +271,86 @@ private fun ActionCard(
     onStart: () -> Unit,
     onStop: () -> Unit,
     maxOpponents: Int,
+    canIncreaseMax: Boolean,
+    canDecreaseMax: Boolean,
     onIncreaseMax: () -> Unit,
     onDecreaseMax: () -> Unit
 ) {
     Card(
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.92f)),
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, Color(0x1A0F172A)),
+        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.94f)),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(15.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text("操作", style = MaterialTheme.typography.titleMedium)
+            Text("快捷操作", style = MaterialTheme.typography.titleMedium)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("最大对手数", style = MaterialTheme.typography.bodyMedium)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onDecreaseMax) { Text("-") }
-                    Text("$maxOpponents", style = MaterialTheme.typography.titleMedium)
-                    IconButton(onClick = onIncreaseMax) { Text("+") }
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("最大对手数", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        text = "范围 1 ~ 12（当前 $maxOpponents）",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF64748B)
+                    )
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    IconButton(
+                        enabled = canDecreaseMax,
+                        onClick = onDecreaseMax,
+                        modifier = Modifier
+                            .size(44.dp)
+                            .background(Color(0xFFEFF4FF), RoundedCornerShape(12.dp))
+                    ) {
+                        Text("-", style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+                    }
+                    Text(
+                        "$maxOpponents",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(horizontal = 4.dp)
+                    )
+                    IconButton(
+                        enabled = canIncreaseMax,
+                        onClick = onIncreaseMax,
+                        modifier = Modifier
+                            .size(44.dp)
+                            .background(Color(0xFFEFF4FF), RoundedCornerShape(12.dp))
+                    ) {
+                        Text("+", style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+                    }
                 }
             }
             FilledTonalButton(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = onGrant,
                 colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = Color(0xFFE0F2FE),
-                    contentColor = Color(0xFF0C4A6E)
+                    containerColor = Color(0xFFDAEEFF),
+                    contentColor = Color(0xFF12385B)
                 )
             ) { Text("前往授权引导") }
 
             Button(
                 modifier = Modifier.fillMaxWidth(),
-                onClick = onStart
+                onClick = onStart,
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
             ) { Text("开启悬浮面板") }
 
             OutlinedButton(
                 modifier = Modifier.fillMaxWidth(),
-                onClick = onStop
+                onClick = onStop,
+                shape = RoundedCornerShape(12.dp)
             ) { Text("关闭悬浮面板") }
         }
     }
@@ -253,20 +359,21 @@ private fun ActionCard(
 @Composable
 private fun GuideCard() {
     Card(
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.88f)),
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, Color(0x1A0F172A)),
+        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.92f)),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+                .padding(15.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text("使用说明", style = MaterialTheme.typography.titleMedium)
-            Text("• 仅提供悬浮覆盖形态的手动记录", style = MaterialTheme.typography.bodySmall)
-            Text("• 不联网，不做自动识别", style = MaterialTheme.typography.bodySmall)
-            Text("• 建议首次先授权，再开启悬浮面板", style = MaterialTheme.typography.bodySmall)
+            Text("使用建议", style = MaterialTheme.typography.titleMedium)
+            Text("• 仅提供悬浮覆盖形态的手动记录", style = MaterialTheme.typography.bodySmall, color = Color(0xFF334155))
+            Text("• 不联网，不做自动识别", style = MaterialTheme.typography.bodySmall, color = Color(0xFF334155))
+            Text("• 建议先授权后开启，避免频繁跳转设置页", style = MaterialTheme.typography.bodySmall, color = Color(0xFF334155))
         }
     }
 }

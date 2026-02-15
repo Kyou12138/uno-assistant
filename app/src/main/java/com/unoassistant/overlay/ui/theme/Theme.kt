@@ -21,11 +21,11 @@ import androidx.compose.ui.unit.sp
  */
 
 private val Ink = Color(0xFF0F172A)        // 深墨色
-private val InkMuted = Color(0xFF334155)   // 次级文字
-private val Paper = Color(0xFFF7F5F2)      // 纸张底
+private val InkMuted = Color(0xFF475569)   // 次级文字
+private val Paper = Color(0xFFF4F7FC)      // 页面底
 private val Card = Color(0xFFFFFFFF)       // 卡片底
-private val Border = Color(0xFFE6E1D9)     // 细边
-private val Accent = Color(0xFF0EA5A8)     // 青色点缀
+private val Border = Color(0xFFD9E2EF)     // 细边
+private val Accent = Color(0xFF1565C0)     // 主交互色
 
 private val LightColors = lightColorScheme(
     primary = Accent,
@@ -50,10 +50,10 @@ private val DarkColors = darkColorScheme(
 )
 
 private val AppTypography = Typography(
-    titleLarge = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.2.sp),
-    titleMedium = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold),
-    bodyMedium = TextStyle(fontSize = 14.sp),
-    bodySmall = TextStyle(fontSize = 12.sp, color = InkMuted)
+    titleLarge = TextStyle(fontSize = 24.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.1.sp),
+    titleMedium = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.SemiBold),
+    bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 20.sp),
+    bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 18.sp, color = InkMuted)
 )
 
 private val AppShapes = Shapes(
@@ -75,4 +75,3 @@ fun UnoAssistantTheme(
         content = content
     )
 }
-

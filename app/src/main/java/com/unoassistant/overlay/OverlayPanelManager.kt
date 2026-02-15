@@ -1,14 +1,16 @@
 ﻿package com.unoassistant.overlay
 
 import android.content.Context
-import android.graphics.Color
+import android.content.res.ColorStateList
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
 import android.graphics.PixelFormat
 import android.os.Build
 import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewOutlineProvider
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.ImageButton
@@ -40,24 +42,23 @@ object OverlayPanelManager {
     private val opponentLayouts = mutableMapOf<String, WindowManager.LayoutParams>()
     private val opponentColorButtons = mutableMapOf<String, MutableMap<UnoColor, Button>>()
 
-    private val panelBgColor = 0xD9FFFFFF.toInt()
+    // 更“产品化”的悬浮窗视觉：更高不透明度 + 更克制的描边
+    private val panelBgColor = 0xF2FFFFFF.toInt()
     private val excludedColorBg = 0xFF757575.toInt()
-    private val panelBorderColor = 0x2F334155
+    private val panelBorderColor = 0x1A0F172A
 
     private const val controlPaddingHorizontalPx = 10
     private const val controlPaddingVerticalPx = 8
-    private const val opponentPaddingPx = 8
-    private const val opponentHeaderBottomPaddingPx = 6
+    // 旧代码用“裸 px”会导致在高密度屏幕上过于拥挤，这里统一按 dp 计算。
+    private const val opponentPaddingPx = 10
+    private const val opponentHeaderBottomPaddingPx = 8
     private const val opponentNameEndPaddingPx = 6
-    private const val opponentHandleEndPaddingPx = 6
+    private const val opponentHandleEndPaddingPx = 8
 
-    private const val controlBtnWidthDp = 42
-    private const val controlBtnHeightDp = 42
-    private const val controlBtnMarginEndDp = 4
-
-    private const val deleteBtnWidthDp = 44
-    private const val deleteBtnHeightDp = 28
-    private const val deleteBtnTextSizeSp = 10f
+    // 触控热区尽量满足 44dp 规则
+    private const val controlBtnWidthDp = 44
+    private const val controlBtnHeightDp = 44
+    private const val controlBtnMarginEndDp = 6
 
     // “牌”样式：窄而高，单行 4 张横向排列
     private const val colorBtnWidthDp = 38
@@ -72,11 +73,12 @@ object OverlayPanelManager {
     private const val opponentEstimatedHeightDp = 125
     private const val clockwiseSlotCount = 8
     private const val minTopInsetDp = 24
-    private const val panelCornerRadiusDp = 14
+    private const val panelCornerRadiusDp = 16
     private const val panelBorderWidthDp = 1
     private const val collapsedHandleWidthDp = 46
     private const val collapsedHandleHeightDp = 46
     private const val collapsedPeekDp = 18
+    private const val panelElevationDp = 10
 
     fun isShowing(): Boolean = controlView != null
 
@@ -141,11 +143,14 @@ object OverlayPanelManager {
             orientation = LinearLayout.HORIZONTAL
             background = panelBackground(context)
             setPadding(
-                controlPaddingHorizontalPx,
-                controlPaddingVerticalPx,
-                controlPaddingHorizontalPx,
-                controlPaddingVerticalPx
+                dp(context, controlPaddingHorizontalPx),
+                dp(context, controlPaddingVerticalPx),
+                dp(context, controlPaddingHorizontalPx),
+                dp(context, controlPaddingVerticalPx)
             )
+            elevation = dp(context, panelElevationDp).toFloat()
+            outlineProvider = ViewOutlineProvider.BACKGROUND
+            clipToOutline = true
         }
 
         val expanded = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
@@ -153,10 +158,13 @@ object OverlayPanelManager {
 
         // 拖动手柄：只在展开态显示，避免与按钮点击冲突
         val dragHandle = TextView(context).apply {
-            text = "拖"
+            text = "⋮⋮"
             tooltipText = "拖动控制条"
-            setPadding(6, 10, 10, 10)
-            setTextColor(0xFF334155.toInt())
+            contentDescription = "拖动控制条手柄"
+            gravity = Gravity.CENTER
+            textSize = 14f
+            setTextColor(0xFF0F172A.toInt())
+            background = controlButtonBackground(context)
         }
 
         val addBtn = controlIconButton(context, android.R.drawable.ic_input_add, "增加对手")
@@ -286,11 +294,13 @@ object OverlayPanelManager {
             val enabled = state.opponents.size < state.maxOpponents
             add.isEnabled = enabled
             add.alpha = if (enabled) 1.0f else 0.35f
+            add.imageAlpha = if (enabled) 255 else 110
         }
         if (remove != null) {
             val enabled = state.opponents.isNotEmpty()
             remove.isEnabled = enabled
             remove.alpha = if (enabled) 1.0f else 0.35f
+            remove.imageAlpha = if (enabled) 255 else 110
         }
     }
 
@@ -442,28 +452,37 @@ object OverlayPanelManager {
     ): View {
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(opponentPaddingPx, opponentPaddingPx, opponentPaddingPx, opponentPaddingPx)
+            setPadding(
+                dp(context, opponentPaddingPx),
+                dp(context, opponentPaddingPx),
+                dp(context, opponentPaddingPx),
+                dp(context, opponentPaddingPx)
+            )
             background = panelBackground(context)
+            elevation = dp(context, panelElevationDp).toFloat()
+            outlineProvider = ViewOutlineProvider.BACKGROUND
+            clipToOutline = true
         }
 
         val header = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, 0, 0, opponentHeaderBottomPaddingPx)
+            setPadding(0, 0, 0, dp(context, opponentHeaderBottomPaddingPx))
         }
 
         val dragHandle = TextView(context).apply {
             text = "⋮⋮"
-            textSize = 13f
+            textSize = 14f
             tooltipText = "拖动对手窗"
             contentDescription = "拖动对手窗手柄"
-            setPadding(0, 0, opponentHandleEndPaddingPx, 0)
-            setTextColor(0xFF334155.toInt())
+            setPadding(0, 0, dp(context, opponentHandleEndPaddingPx), 0)
+            setTextColor(0xFF0F172A.toInt())
         }
 
         val name = TextView(context).apply {
             text = opponent.name
-            textSize = 11f
-            setPadding(0, 0, opponentNameEndPaddingPx, 0)
+            textSize = 12f
+            setPadding(0, 0, dp(context, opponentNameEndPaddingPx), 0)
+            setTextColor(0xFF0F172A.toInt())
         }
 
         header.addView(dragHandle)
@@ -657,8 +676,21 @@ object OverlayPanelManager {
             contentDescription = tooltip
             tooltipText = tooltip
             scaleType = ImageView.ScaleType.CENTER_INSIDE
-            setBackgroundColor(Color.TRANSPARENT)
+            background = controlButtonBackground(context)
+            imageTintList = ColorStateList.valueOf(0xFF0F172A.toInt())
+            setPadding(dp(context, 10), dp(context, 10), dp(context, 10), dp(context, 10))
         }
+    }
+
+    private fun controlButtonBackground(context: Context): RippleDrawable {
+        val content = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(context, 12).toFloat()
+            setColor(0x0A0F172A)
+            setStroke(dp(context, 1), 0x140F172A)
+        }
+        val ripple = ColorStateList.valueOf(0x140EA5A8)
+        return RippleDrawable(ripple, content, null)
     }
 
     private fun activeColor(color: UnoColor): Int {
@@ -683,7 +715,7 @@ object OverlayPanelManager {
     private fun applyColorCardStyle(btn: Button, context: Context, color: UnoColor, isExcluded: Boolean) {
         val drawable = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
-            cornerRadius = dp(context, 10).toFloat()
+            cornerRadius = dp(context, 12).toFloat()
             if (isExcluded) {
                 setColor(excludedColorBg)
                 setStroke(dp(context, 2), activeColor(color))
