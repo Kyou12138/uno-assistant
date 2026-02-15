@@ -1,6 +1,8 @@
 ﻿package com.unoassistant.overlay
 
 import android.content.Context
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.graphics.PixelFormat
 import android.os.Build
 import android.provider.Settings
@@ -35,6 +37,7 @@ object OverlayPanelManager {
 
     private val panelBgColor = 0xD9FFFFFF.toInt()
     private val excludedColorBg = 0xFF757575.toInt()
+    private val panelBorderColor = 0x2F334155
 
     private const val controlPaddingHorizontalPx = 10
     private const val controlPaddingVerticalPx = 8
@@ -63,6 +66,8 @@ object OverlayPanelManager {
     private const val opponentEstimatedHeightDp = 125
     private const val clockwiseSlotCount = 8
     private const val minTopInsetDp = 24
+    private const val panelCornerRadiusDp = 14
+    private const val panelBorderWidthDp = 1
 
     fun isShowing(): Boolean = controlView != null
 
@@ -112,7 +117,7 @@ object OverlayPanelManager {
     private fun buildControlPanelView(context: Context): View {
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(panelBgColor)
+            background = panelBackground(context)
             setPadding(
                 controlPaddingHorizontalPx,
                 controlPaddingVerticalPx,
@@ -227,7 +232,7 @@ object OverlayPanelManager {
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(opponentPaddingPx, opponentPaddingPx, opponentPaddingPx, opponentPaddingPx)
-            setBackgroundColor(panelBgColor)
+            background = panelBackground(context)
         }
 
         val header = LinearLayout(context).apply {
@@ -447,6 +452,7 @@ object OverlayPanelManager {
             contentDescription = tooltip
             tooltipText = tooltip
             scaleType = ImageView.ScaleType.CENTER_INSIDE
+            setBackgroundColor(Color.TRANSPARENT)
         }
     }
 
@@ -473,6 +479,15 @@ object OverlayPanelManager {
         return when (color) {
             UnoColor.Yellow -> 0xFF1A1A1A.toInt()
             else -> 0xFFFFFFFF.toInt()
+        }
+    }
+
+    private fun panelBackground(context: Context): GradientDrawable {
+        return GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(context, panelCornerRadiusDp).toFloat()
+            setColor(panelBgColor)
+            setStroke(dp(context, panelBorderWidthDp), panelBorderColor)
         }
     }
 
