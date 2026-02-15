@@ -79,6 +79,7 @@ object OverlayPanelManager {
     private const val collapsedHandleHeightDp = 46
     private const val collapsedPeekDp = 18
     private const val panelElevationDp = 10
+    private const val dragSlopDp = 8
 
     fun isShowing(): Boolean = controlView != null
 
@@ -240,7 +241,7 @@ object OverlayPanelManager {
         }
 
         // 控制条尽量紧凑，减少遮挡游戏区域
-        dragHandle.layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(context, controlBtnHeightDp)).apply {
+        dragHandle.layoutParams = LinearLayout.LayoutParams(dp(context, controlBtnWidthDp), dp(context, controlBtnHeightDp)).apply {
             marginEnd = dp(context, 6)
         }
         addBtn.layoutParams = buttonLayoutParams(context, controlBtnWidthDp, controlBtnHeightDp, controlBtnMarginEndDp)
@@ -282,7 +283,9 @@ object OverlayPanelManager {
         updateLockButtonText(context)
         updateControlAddRemoveEnabled(context)
 
-        attachControlDrag(context, dragHandle, root)
+        attachControlDrag(context, dragHandle, root, allowWhenCollapsed = false)
+        // 收起态也允许拖动：在“展开按钮”上拖动控制条，轻点仍是展开
+        attachControlDrag(context, expandBtn, root, allowWhenCollapsed = true)
         return root
     }
 
@@ -363,18 +366,19 @@ object OverlayPanelManager {
         runCatching { wm.updateViewLayout(panel, lp) }
     }
 
-    private fun attachControlDrag(context: Context, dragHandle: View, targetView: View) {
+    private fun attachControlDrag(context: Context, dragHandle: View, targetView: View, allowWhenCollapsed: Boolean) {
         var startRawX = 0f
         var startRawY = 0f
         var startX = 0
         var startY = 0
+        var dragging = false
+        val slopPx = dp(context, dragSlopDp)
 
         dragHandle.setOnTouchListener { _, event ->
             val wm = windowManager ?: return@setOnTouchListener false
             val lp = controlLayout ?: return@setOnTouchListener false
             val state = OverlayStateRepository.get(context)
-            // 收起态不允许通过展开态拖动手柄移动
-            if (state.controlCollapsed) return@setOnTouchListener false
+            if (state.controlCollapsed && !allowWhenCollapsed) return@setOnTouchListener false
 
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
@@ -382,19 +386,30 @@ object OverlayPanelManager {
                     startRawY = event.rawY
                     startX = lp.x
                     startY = lp.y
+                    dragging = false
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    lp.x = startX + (event.rawX - startRawX).toInt()
-                    lp.y = startY + (event.rawY - startRawY).toInt()
-                    runCatching { wm.updateViewLayout(targetView, lp) }
+                    val dx = (event.rawX - startRawX).toInt()
+                    val dy = (event.rawY - startRawY).toInt()
+                    if (!dragging && (kotlin.math.abs(dx) > slopPx || kotlin.math.abs(dy) > slopPx)) {
+                        dragging = true
+                    }
+                    if (dragging) {
+                        lp.x = startX + dx
+                        lp.y = startY + dy
+                        runCatching { wm.updateViewLayout(targetView, lp) }
+                    }
                     true
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    val x = lp.x
-                    val y = lp.y
-                    OverlayStateRepository.update(context) { cur -> cur.copy(overlayX = x, overlayY = y) }
-                    true
+                    if (dragging) {
+                        val x = lp.x
+                        val y = lp.y
+                        OverlayStateRepository.update(context) { cur -> cur.copy(overlayX = x, overlayY = y) }
+                    }
+                    // allowWhenCollapsed=true 场景：如果未发生拖动，返回 false 让 click 生效（展开）
+                    if (allowWhenCollapsed && !dragging) false else true
                 }
                 else -> false
             }
@@ -509,13 +524,13 @@ object OverlayPanelManager {
         // 保存按钮引用，便于后续“原地更新样式”而不是重建窗口
         opponentColorButtons[opponent.id] = colorButtons
 
-        attachOpponentWindowDrag(context, dragHandle, opponent.id, root, layout)
+        attachOpponentWindowDrag(context, listOf(dragHandle, name, header), opponent.id, root, layout)
         return root
     }
 
     private fun attachOpponentWindowDrag(
         context: Context,
-        dragHandle: View,
+        dragHandles: List<View>,
         opponentId: String,
         targetView: View,
         layout: WindowManager.LayoutParams
@@ -524,37 +539,53 @@ object OverlayPanelManager {
         var startRawY = 0f
         var startX = 0
         var startY = 0
+        var dragging = false
+        val slopPx = dp(context, dragSlopDp)
 
-        dragHandle.setOnTouchListener { _, event ->
+        val listener = View.OnTouchListener { _, event ->
             val locked = OverlayStateRepository.get(context).locked
-            if (locked) return@setOnTouchListener false
+            if (locked) return@OnTouchListener false
 
-            val wm = windowManager ?: return@setOnTouchListener false
+            val wm = windowManager ?: return@OnTouchListener false
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     startRawX = event.rawX
                     startRawY = event.rawY
                     startX = layout.x
                     startY = layout.y
+                    dragging = false
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    layout.x = startX + (event.rawX - startRawX).toInt()
-                    layout.y = startY + (event.rawY - startRawY).toInt()
-                    wm.updateViewLayout(targetView, layout)
+                    val dx = (event.rawX - startRawX).toInt()
+                    val dy = (event.rawY - startRawY).toInt()
+                    if (!dragging && (kotlin.math.abs(dx) > slopPx || kotlin.math.abs(dy) > slopPx)) {
+                        dragging = true
+                    }
+                    if (dragging) {
+                        layout.x = startX + dx
+                        layout.y = startY + dy
+                        wm.updateViewLayout(targetView, layout)
+                    }
                     true
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    val x = layout.x
-                    val y = layout.y
-                    OverlayStateRepository.update(context) { cur ->
-                        cur.copy(opponents = cur.opponents.map { o -> if (o.id == opponentId) o.copy(offsetX = x, offsetY = y) else o })
+                    if (dragging) {
+                        val x = layout.x
+                        val y = layout.y
+                        OverlayStateRepository.update(context) { cur ->
+                            cur.copy(opponents = cur.opponents.map { o -> if (o.id == opponentId) o.copy(offsetX = x, offsetY = y) else o })
+                        }
+                        true
+                    } else {
+                        false
                     }
-                    true
                 }
                 else -> false
             }
         }
+
+        dragHandles.forEach { h -> h.setOnTouchListener(listener) }
     }
 
     private fun colorButton(context: Context, opponent: Opponent, color: UnoColor): Button {
