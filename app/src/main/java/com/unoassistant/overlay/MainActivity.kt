@@ -26,6 +26,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -38,12 +39,14 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.unoassistant.overlay.persist.OverlayStateRepository
 import com.unoassistant.overlay.ui.theme.UnoAssistantTheme
 
 class MainActivity : ComponentActivity() {
@@ -68,12 +71,14 @@ fun OverlayControlPage() {
     val lifecycleOwner = LocalLifecycleOwner.current
     var hasOverlayPermission by remember { mutableStateOf(canDrawOverlays(context)) }
     var isOverlayShowing by remember { mutableStateOf(OverlayPanelManager.isShowing()) }
+    var maxOpponents by remember { mutableStateOf(OverlayStateRepository.get(context).maxOpponents) }
 
     DisposableEffect(lifecycleOwner, context) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 hasOverlayPermission = canDrawOverlays(context)
                 isOverlayShowing = OverlayPanelManager.isShowing()
+                maxOpponents = OverlayStateRepository.get(context).maxOpponents
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -126,6 +131,17 @@ fun OverlayControlPage() {
                     OverlayServiceController.stop(context)
                     isOverlayShowing = false
                     Toast.makeText(context, "已关闭悬浮面板", Toast.LENGTH_SHORT).show()
+                },
+                maxOpponents = maxOpponents,
+                onIncreaseMax = {
+                    val next = (maxOpponents + 1).coerceAtMost(12)
+                    OverlayStateRepository.update(context) { cur -> cur.copy(maxOpponents = next) }
+                    maxOpponents = next
+                },
+                onDecreaseMax = {
+                    val next = (maxOpponents - 1).coerceAtLeast(1)
+                    OverlayStateRepository.update(context) { cur -> cur.copy(maxOpponents = next) }
+                    maxOpponents = next
                 }
             )
 
@@ -183,7 +199,10 @@ private fun StatusPill(label: String, ok: Boolean) {
 private fun ActionCard(
     onGrant: () -> Unit,
     onStart: () -> Unit,
-    onStop: () -> Unit
+    onStop: () -> Unit,
+    maxOpponents: Int,
+    onIncreaseMax: () -> Unit,
+    onDecreaseMax: () -> Unit
 ) {
     Card(
         shape = RoundedCornerShape(18.dp),
@@ -197,6 +216,18 @@ private fun ActionCard(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text("操作", style = MaterialTheme.typography.titleMedium)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("最大对手数", style = MaterialTheme.typography.bodyMedium)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onDecreaseMax) { Text("-") }
+                    Text("$maxOpponents", style = MaterialTheme.typography.titleMedium)
+                    IconButton(onClick = onIncreaseMax) { Text("+") }
+                }
+            }
             FilledTonalButton(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = onGrant,

@@ -132,6 +132,11 @@ object OverlayPanelManager {
         val closeBtn = controlIconButton(context, android.R.drawable.ic_menu_close_clear_cancel, "关闭悬浮")
 
         addBtn.setOnClickListener {
+            val curState = OverlayStateRepository.get(context)
+            if (curState.opponents.size >= curState.maxOpponents) {
+                Toast.makeText(context, "已达上限：最多 ${curState.maxOpponents} 名对手", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
             OverlayStateRepository.update(context) { cur ->
                 val nextIndex = nextOpponentIndex(cur.opponents)
                 val id = UUID.randomUUID().toString()

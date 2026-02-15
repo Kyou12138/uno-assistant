@@ -35,6 +35,8 @@ data class OverlayState(
     val overlayY: Int,
     val alpha: Float,
     val locked: Boolean,
+    // 可新增对手的最大数量（配置项，默认 4）
+    val maxOpponents: Int,
     val opponents: List<Opponent>
 ) {
     companion object {
@@ -44,6 +46,7 @@ data class OverlayState(
                 overlayY = 200,
                 alpha = 1.0f,
                 locked = true,
+                maxOpponents = 4,
                 opponents = emptyList()
             )
         }
