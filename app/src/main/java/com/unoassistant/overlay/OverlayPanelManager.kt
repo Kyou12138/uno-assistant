@@ -480,7 +480,9 @@ object OverlayPanelManager {
     private fun colorButton(context: Context, opponent: Opponent, color: UnoColor): Button {
         val isExcluded = opponent.excluded[color] == true
         return Button(context).apply {
-            text = colorLabel(color)
+            text = ""
+            contentDescription = "${colorNameZh(color)}色牌"
+            tooltipText = colorNameZh(color)
             layoutParams = buttonLayoutParams(
                 context = context,
                 widthDp = colorBtnWidthDp,
@@ -488,12 +490,7 @@ object OverlayPanelManager {
                 marginEndDp = colorBtnMarginEndDp,
                 bottomMarginDp = colorBtnMarginBottomDp
             )
-
-            val activeBg = activeColor(color)
-            val activeText = activeTextColor(color)
-
-            setBackgroundColor(if (isExcluded) excludedColorBg else activeBg)
-            setTextColor(if (isExcluded) 0xFFFFFFFF.toInt() else activeText)
+            applyColorCardStyle(this, context, color, isExcluded)
 
             setOnClickListener {
                 OverlayStateRepository.update(context) { cur ->
@@ -603,15 +600,6 @@ object OverlayPanelManager {
         }
     }
 
-    private fun colorLabel(color: UnoColor): String {
-        return when (color) {
-            UnoColor.Red -> "R"
-            UnoColor.Yellow -> "Y"
-            UnoColor.Blue -> "B"
-            UnoColor.Green -> "G"
-        }
-    }
-
     private fun activeColor(color: UnoColor): Int {
         return when (color) {
             UnoColor.Red -> 0xFFFF5252.toInt()
@@ -622,11 +610,29 @@ object OverlayPanelManager {
         }
     }
 
-    private fun activeTextColor(color: UnoColor): Int {
+    private fun colorNameZh(color: UnoColor): String {
         return when (color) {
-            UnoColor.Yellow -> 0xFF1A1A1A.toInt()
-            else -> 0xFFFFFFFF.toInt()
+            UnoColor.Red -> "红"
+            UnoColor.Yellow -> "黄"
+            UnoColor.Blue -> "蓝"
+            UnoColor.Green -> "绿"
         }
+    }
+
+    private fun applyColorCardStyle(btn: Button, context: Context, color: UnoColor, isExcluded: Boolean) {
+        val drawable = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(context, 10).toFloat()
+            if (isExcluded) {
+                setColor(excludedColorBg)
+                setStroke(dp(context, 2), activeColor(color))
+            } else {
+                setColor(activeColor(color))
+                setStroke(dp(context, 1), 0x22000000)
+            }
+        }
+        btn.background = drawable
+        btn.alpha = if (isExcluded) 0.92f else 1.0f
     }
 
     private fun panelBackground(context: Context): GradientDrawable {
@@ -643,10 +649,9 @@ object OverlayPanelManager {
         UnoColor.entries.forEach { c ->
             val btn = btns[c] ?: return@forEach
             val isExcluded = opponent.excluded[c] == true
-            val activeBg = activeColor(c)
-            val activeText = activeTextColor(c)
-            btn.setBackgroundColor(if (isExcluded) excludedColorBg else activeBg)
-            btn.setTextColor(if (isExcluded) 0xFFFFFFFF.toInt() else activeText)
+            btn.contentDescription = "${colorNameZh(c)}色牌"
+            btn.tooltipText = colorNameZh(c)
+            applyColorCardStyle(btn, btn.context, c, isExcluded)
         }
     }
 
