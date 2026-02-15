@@ -30,6 +30,35 @@ object OverlayPanelManager {
     private val opponentViews = mutableMapOf<String, View>()
     private val opponentLayouts = mutableMapOf<String, WindowManager.LayoutParams>()
 
+    private val panelBgColor = 0xD9FFFFFF.toInt()
+    private val excludedColorBg = 0xFF757575.toInt()
+
+    private const val controlPaddingHorizontalPx = 10
+    private const val controlPaddingVerticalPx = 8
+    private const val opponentPaddingPx = 10
+    private const val opponentHeaderBottomPaddingPx = 8
+    private const val opponentNameEndPaddingPx = 8
+
+    private const val addBtnWidthDp = 48
+    private const val closeBtnWidthDp = 48
+    private const val lockResetBtnWidthDp = 64
+    private const val controlBtnHeightDp = 40
+    private const val controlBtnMarginEndDp = 6
+
+    private const val deleteBtnWidthDp = 56
+    private const val deleteBtnHeightDp = 32
+    private const val deleteBtnTextSizeSp = 11f
+
+    private const val colorBtnWidthDp = 64
+    private const val colorBtnHeightDp = 40
+    private const val colorBtnMarginEndDp = 4
+    private const val colorBtnMarginBottomDp = 4
+
+    private const val defaultControlHeightDp = 56
+    private const val opponentOffsetFromControlDp = 12
+    private const val opponentGridColGapDp = 220
+    private const val opponentGridRowGapDp = 190
+
     fun isShowing(): Boolean = controlView != null
 
     fun show(context: Context): Boolean {
@@ -77,8 +106,13 @@ object OverlayPanelManager {
     private fun buildControlPanelView(context: Context): View {
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(0xD9FFFFFF.toInt())
-            setPadding(10, 8, 10, 8)
+            setBackgroundColor(panelBgColor)
+            setPadding(
+                controlPaddingHorizontalPx,
+                controlPaddingVerticalPx,
+                controlPaddingHorizontalPx,
+                controlPaddingVerticalPx
+            )
         }
 
         val addBtn = Button(context).apply { text = "+" }
@@ -120,10 +154,10 @@ object OverlayPanelManager {
         }
 
         // 控制条尽量紧凑，减少遮挡游戏区域
-        addBtn.layoutParams = LinearLayout.LayoutParams(dp(context, 48), dp(context, 40)).apply { marginEnd = dp(context, 6) }
-        lockBtn.layoutParams = LinearLayout.LayoutParams(dp(context, 64), dp(context, 40)).apply { marginEnd = dp(context, 6) }
-        resetBtn.layoutParams = LinearLayout.LayoutParams(dp(context, 64), dp(context, 40)).apply { marginEnd = dp(context, 6) }
-        closeBtn.layoutParams = LinearLayout.LayoutParams(dp(context, 48), dp(context, 40))
+        addBtn.layoutParams = buttonLayoutParams(context, addBtnWidthDp, controlBtnHeightDp, controlBtnMarginEndDp)
+        lockBtn.layoutParams = buttonLayoutParams(context, lockResetBtnWidthDp, controlBtnHeightDp, controlBtnMarginEndDp)
+        resetBtn.layoutParams = buttonLayoutParams(context, lockResetBtnWidthDp, controlBtnHeightDp, controlBtnMarginEndDp)
+        closeBtn.layoutParams = buttonLayoutParams(context, closeBtnWidthDp, controlBtnHeightDp)
 
         root.addView(addBtn)
         root.addView(lockBtn)
@@ -176,26 +210,26 @@ object OverlayPanelManager {
     ): View {
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(10, 10, 10, 10)
-            setBackgroundColor(0xD9FFFFFF.toInt())
+            setPadding(opponentPaddingPx, opponentPaddingPx, opponentPaddingPx, opponentPaddingPx)
+            setBackgroundColor(panelBgColor)
         }
 
         val header = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, 0, 0, 8)
+            setPadding(0, 0, 0, opponentHeaderBottomPaddingPx)
         }
 
         val name = TextView(context).apply {
             text = "${opponent.name} ↕"
             textSize = 12f
-            setPadding(0, 0, 8, 0)
+            setPadding(0, 0, opponentNameEndPaddingPx, 0)
         }
 
         val deleteBtn = Button(context).apply {
             // 按钮尽量小，避免遮挡对手信息与色块区域
             text = "X"
-            textSize = 11f
-            layoutParams = LinearLayout.LayoutParams(dp(context, 56), dp(context, 32))
+            textSize = deleteBtnTextSizeSp
+            layoutParams = buttonLayoutParams(context, deleteBtnWidthDp, deleteBtnHeightDp)
             setOnClickListener {
                 OverlayStateRepository.update(context) { cur ->
                     cur.copy(opponents = cur.opponents.filterNot { it.id == opponent.id })
@@ -273,32 +307,20 @@ object OverlayPanelManager {
     private fun colorButton(context: Context, opponent: Opponent, color: UnoColor): View {
         val isExcluded = opponent.excluded[color] == true
         return Button(context).apply {
-            text = when (color) {
-                UnoColor.Red -> "R"
-                UnoColor.Yellow -> "Y"
-                UnoColor.Blue -> "B"
-                UnoColor.Green -> "G"
-            }
-            layoutParams = LinearLayout.LayoutParams(dp(context, 64), dp(context, 40)).apply {
-                marginEnd = dp(context, 4)
-                bottomMargin = dp(context, 4)
-            }
+            text = colorLabel(color)
+            layoutParams = buttonLayoutParams(
+                context = context,
+                widthDp = colorBtnWidthDp,
+                heightDp = colorBtnHeightDp,
+                marginEndDp = colorBtnMarginEndDp,
+                bottomMarginDp = colorBtnMarginBottomDp
+            )
 
-            val colorBg = when (color) {
-                UnoColor.Red -> 0xFFFF5252.toInt()
-                UnoColor.Yellow -> 0xFFFFD740.toInt()
-                UnoColor.Blue -> 0xFF448AFF.toInt()
-                // 用更亮的绿色，避免在部分机型/亮度下“绿色看不清”
-                UnoColor.Green -> 0xFF00C853.toInt()
-            }
-            val colorText = when (color) {
-                UnoColor.Yellow -> 0xFF1A1A1A.toInt()
-                else -> 0xFFFFFFFF.toInt()
-            }
-            val excludedBg = 0xFF757575.toInt()
+            val activeBg = activeColor(color)
+            val activeText = activeTextColor(color)
 
-            setBackgroundColor(if (isExcluded) excludedBg else colorBg)
-            setTextColor(if (isExcluded) 0xFFFFFFFF.toInt() else colorText)
+            setBackgroundColor(if (isExcluded) excludedColorBg else activeBg)
+            setTextColor(if (isExcluded) 0xFFFFFFFF.toInt() else activeText)
 
             setOnClickListener {
                 OverlayStateRepository.update(context) { cur ->
@@ -337,14 +359,53 @@ object OverlayPanelManager {
     ): Pair<Int, Int> {
         // 控制条默认位于 (overlayX, overlayY)。对手窗默认从控制条下方开始排布，避免遮挡控制按钮。
         val baseX = state.overlayX
-        val controlH = control?.measuredHeight?.takeIf { it > 0 } ?: dp(context, 56)
-        val baseY = state.overlayY + controlH + dp(context, 12)
+        val controlH = control?.measuredHeight?.takeIf { it > 0 } ?: dp(context, defaultControlHeightDp)
+        val baseY = state.overlayY + controlH + dp(context, opponentOffsetFromControlDp)
 
         val col = index % 2
         val row = index / 2
-        val x = baseX + col * dp(context, 220)
-        val y = baseY + row * dp(context, 190)
+        val x = baseX + col * dp(context, opponentGridColGapDp)
+        val y = baseY + row * dp(context, opponentGridRowGapDp)
         return x to y
+    }
+
+    private fun buttonLayoutParams(
+        context: Context,
+        widthDp: Int,
+        heightDp: Int,
+        marginEndDp: Int = 0,
+        bottomMarginDp: Int = 0
+    ): LinearLayout.LayoutParams {
+        return LinearLayout.LayoutParams(dp(context, widthDp), dp(context, heightDp)).apply {
+            if (marginEndDp > 0) marginEnd = dp(context, marginEndDp)
+            if (bottomMarginDp > 0) bottomMargin = dp(context, bottomMarginDp)
+        }
+    }
+
+    private fun colorLabel(color: UnoColor): String {
+        return when (color) {
+            UnoColor.Red -> "R"
+            UnoColor.Yellow -> "Y"
+            UnoColor.Blue -> "B"
+            UnoColor.Green -> "G"
+        }
+    }
+
+    private fun activeColor(color: UnoColor): Int {
+        return when (color) {
+            UnoColor.Red -> 0xFFFF5252.toInt()
+            UnoColor.Yellow -> 0xFFFFD740.toInt()
+            UnoColor.Blue -> 0xFF448AFF.toInt()
+            // 用更亮的绿色，避免在部分机型/亮度下“绿色看不清”
+            UnoColor.Green -> 0xFF00C853.toInt()
+        }
+    }
+
+    private fun activeTextColor(color: UnoColor): Int {
+        return when (color) {
+            UnoColor.Yellow -> 0xFF1A1A1A.toInt()
+            else -> 0xFFFFFFFF.toInt()
+        }
     }
 
     private fun newLayoutParams(x: Int, y: Int): WindowManager.LayoutParams {
