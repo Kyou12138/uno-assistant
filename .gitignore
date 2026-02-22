@@ -4,4 +4,14 @@
 /.idea/
 *.iml
 /app/build/
+/keystore.properties
+*.jks
+*.keystore
 
+# temp artifacts
+/.codex/
+/bugreport-*.zip
+/tmp_*.png
+/tmp_*.txt
+/tmp_*.xml
+/tmp_*.preferences_pb

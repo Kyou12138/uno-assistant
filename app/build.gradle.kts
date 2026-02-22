@@ -1,6 +1,27 @@
+import java.util.Properties
+import org.gradle.api.GradleException
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+}
+
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val releaseBuildRequested = gradle.startParameter.taskNames.any { task ->
+    task.contains("release", ignoreCase = true) || task.contains("bundle", ignoreCase = true)
+}
+
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
+}
+
+fun requiredProperty(props: Properties, key: String): String {
+    val value = props.getProperty(key)?.trim()
+    if (value.isNullOrEmpty()) {
+        throw GradleException("keystore.properties 缺少必要字段: $key")
+    }
+    return value
 }
 
 android {
@@ -17,9 +38,30 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            if (keystorePropertiesFile.exists()) {
+                val storeFilePath = requiredProperty(keystoreProperties, "storeFile")
+                val releaseStoreFile = rootProject.file(storeFilePath)
+                if (!releaseStoreFile.exists()) {
+                    throw GradleException("未找到生产签名文件: ${releaseStoreFile.absolutePath}")
+                }
+                storeFile = releaseStoreFile
+                storePassword = requiredProperty(keystoreProperties, "storePassword")
+                keyAlias = requiredProperty(keystoreProperties, "keyAlias")
+                keyPassword = requiredProperty(keystoreProperties, "keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (keystorePropertiesFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            } else if (releaseBuildRequested) {
+                throw GradleException("release 构建必须配置 keystore.properties（生产签名）")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
